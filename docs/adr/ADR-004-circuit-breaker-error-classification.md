@@ -7,7 +7,7 @@ Accepted
 When a test or build command does not succeed, the agent's default behavior is to modify source code and retry. If the root cause is an infrastructure issue (port in use, Docker not running, expired credentials), the agent destroys correct code trying to fix an environment problem. This is SPOF 3 (Token Burner Loop).
 
 ## Decision
-We implement a Circuit Breaker as a postToolUse hook on shell commands that:
+This design implements a Circuit Breaker as a postToolUse hook on shell commands that:
 1. Reads only the last 40 lines of stderr (context trimming)
 2. Classifies the error as CODE or ENVIRONMENT using keyword matching
 3. If ENVIRONMENT: stops immediately, does not touch source code, reports to human

@@ -7,7 +7,7 @@ Accepted
 The Autonomous Code Factory requires a coherent set of design principles that govern decisions across all layers — from work intake through delivery. Without a unifying framework, individual components optimize locally but create systemic incoherence.
 
 ## Decision
-We adopt Synaptic Engineering as the foundational design philosophy. Four neuro-inspired principles govern all architectural decisions:
+This design adopts Synaptic Engineering as the foundational design philosophy. Four neuro-inspired principles govern all architectural decisions:
 
 1. **Neurons**: Every component has rigid input/output contracts
 2. **Synaptic Cleft**: Context transmission between components is clean and minimal

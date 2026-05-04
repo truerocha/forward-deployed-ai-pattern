@@ -7,7 +7,7 @@ Accepted
 The Staff Engineer manages 3+ projects simultaneously. Each project is a separate codebase with its own architecture, test infrastructure, and quality standards. The factory must support parallel operation without cross-contamination.
 
 ## Decision
-We adopt a distributed topology where:
+This design adopts a distributed topology where:
 - Each project is a separate Kiro workspace with its own `.kiro/` directory
 - Global laws (`~/.kiro/steering/`) are inherited by all workspaces via auto inclusion
 - Global credentials (`~/.kiro/settings/mcp.json`) are shared across workspaces

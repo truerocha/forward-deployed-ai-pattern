@@ -7,7 +7,7 @@ Accepted
 Each agent session starts from zero context. Insights discovered in one task (error patterns, architectural decisions, tool conventions) are lost when the session ends. The CCA paper (Wong et al., 2026) demonstrated that persistent notes reduce iteration turns by 5% and improve resolve rate by 1.4%.
 
 ## Decision
-We implement a note-taking system with:
+This design implements a note-taking system with:
 - Structured format: YAML frontmatter (id, title, verification status, date) + Context + Insight + Anti-patterns
 - Two scopes: project-specific (`.kiro/notes/project/`) and cross-project (`~/.kiro/notes/shared/`)
 - Verification status: TESTED (from PASS tasks) or UNTESTED (from PARTIAL tasks)

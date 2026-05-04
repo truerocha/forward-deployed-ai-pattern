@@ -7,7 +7,7 @@ Accepted
 Enterprise development requires traceability between code changes and work items (issues, tasks, epics). Manual synchronization between the IDE and ALM systems (GitHub Issues, Asana, GitLab) creates friction and breaks audit trails.
 
 ## Decision
-We integrate with ALM systems through MCP (Model Context Protocol) powers:
+The factory integrates with ALM systems through MCP (Model Context Protocol) powers:
 - GitHub MCP for issues, PRs, Actions status
 - GitLab MCP for MRs, pipelines (via mirror)
 - Asana MCP for tasks, projects, status updates
