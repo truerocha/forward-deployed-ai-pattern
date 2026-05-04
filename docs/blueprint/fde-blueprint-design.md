@@ -10,9 +10,9 @@
 
 ---
 
-## 0. Design Philosophy — Synaptic Engineering
+## 0. Design Philosophy — Neuro-Inspired Engineering Principles
 
-The Autonomous Code Factory operates on a neuro-inspired architecture. Every design decision derives from four foundational principles borrowed from how biological neural networks process, transmit, and consolidate information.
+The Autonomous Code Factory operates on four design principles inspired by how biological neural networks process information. These are engineering metaphors that map to concrete implementation patterns — not neuroscience claims. The term "Synaptic Engineering" is a communication device for the governance framework, not a reference to neuromorphic hardware or computational neuroscience.
 
 ### 0.1 Neurons — Encapsulated Modules with Rigid Interfaces
 

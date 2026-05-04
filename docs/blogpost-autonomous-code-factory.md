@@ -1,6 +1,7 @@
 # I Stopped Writing Code. My AI Agents Ship 3 Projects in Parallel.
 
-> Here is how I built an Autonomous Code Factory using Forward Deployed Engineers powered by Kiro.
+
+> What I learned building real systems with an Autonomous Code Factory powered by Kiro.
 
 ![Autonomous Code Factory Architecture](https://raw.githubusercontent.com/truerocha/forward-deployed-engineer-pattern/main/docs/architecture/autonomous-code-factory.png)
 
@@ -30,7 +31,7 @@ Improvement:          +67 percentage points
 
 ## How the Factory Works
 
-The factory operates on a principle I call **Synaptic Engineering** — borrowed from how neural networks process information:
+The factory operates on four design principles inspired by how neural networks process information. These are not neuroscience claims — they are engineering metaphors that map to concrete implementation patterns:
 
 **Every component has rigid inputs and outputs.** A workspace receives a specification and produces a merge request. No ambiguity in between.
 
@@ -140,6 +141,10 @@ The factory does not replace engineering judgment. I write the specifications th
 What changed is where I spend my time. I moved from writing implementation code to writing specifications and approving outcomes. The agents handle the rest.
 
 The specification is the product. The code is the output.
+
+---
+
+*Disclaimer: The ideas, analyses, and conclusions presented here reflect my personal views as a technology professional and must not be interpreted as official statements from any employer, current or former.*
 
 ---
 
