@@ -79,6 +79,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - `docs/corrections-of-error.md` — sequential COE log (8 entries)
 - `CHANGELOG.md` — this file
 
+### Added — Data Contract and Platform Templates (ADR-010)
+- `docs/design/data-contract-task-input.md` — formal data contract defining required/optional/agent-populated fields, validation rules, platform mapping, agent consumption matrix
+- `.github/ISSUE_TEMPLATE/factory-task.yml` — GitHub issue form enforcing the data contract (dropdowns, checkboxes, required fields)
+- `.github/pull_request_template.md` — structured PR template with validation checklist
+- `.gitlab/issue_templates/factory-task.md` — GitLab issue template with scoped labels
+- ADR-010: Data Contract for Task Input — connects data contract to Agent Builder (tech_stack + type drive just-in-time agent provisioning)
+
 ### Changed — Enterprise Hooks (v1 → v2)
 - `fde-enterprise-backlog` v2.0 — now platform-aware: reads `source:` from spec frontmatter, syncs to originating platform, supports cross-platform linking
 - `fde-enterprise-release` v2.0 — creates PR/MR on the correct platform (GitHub or GitLab), updates ALM status across all linked platforms

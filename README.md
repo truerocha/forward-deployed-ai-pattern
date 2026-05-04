@@ -140,7 +140,7 @@ forward-deployed-engineer-pattern/
 |   +-- settings/                   # MCP config template
 +-- docs/
 |   +-- architecture/               # System diagram + design document (DDR)
-|   +-- adr/                        # 9 Architecture Decision Records
+|   +-- adr/                        # 10 Architecture Decision Records
 |   +-- flows/                      # 13 Mermaid feature flow diagrams
 |   +-- blueprint/                  # V3 blueprint + artifacts + deploy guide
 |   +-- design/                     # V2 design document (research foundations)

@@ -85,3 +85,13 @@
 - **Description**: `((PASS++))` when PASS=0 evaluates `((0))` which is falsy in bash (exit code 1). Combined with `&&`/`||` chains, this caused both success and failure branches to execute.
 - **Fix**: Changed to `PASS=$((PASS + 1))` which always returns exit code 0.
 - **Root cause**: Bash arithmetic treats 0 as falsy, unlike most languages.
+
+
+## COE-009: Data contract shipped without ADR, CHANGELOG, or architecture update
+
+- **Date**: 2026-05-04
+- **Severity**: Governance
+- **Found in**: commit `13146d3` (feat(contract): data contract)
+- **Description**: The data contract was committed without ADR, CHANGELOG update, design document update, or Agent Builder integration design.
+- **Fix**: Created ADR-010, updated CHANGELOG, design document ADR list, README ADR count. Added Agent Builder integration to ADR-010.
+- **Root cause**: Committed without running the documentation checklist. DoD gate was not applied.

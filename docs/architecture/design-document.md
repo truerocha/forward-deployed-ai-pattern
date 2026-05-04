@@ -90,6 +90,7 @@ See `docs/adr/` for detailed Architecture Decision Records:
 - ADR-007: Cross-Session Learning via Notes
 - ADR-008: Multi-Platform Project Tooling (GitHub Projects, Asana, GitLab Ultimate)
 - ADR-009: AWS Cloud Infrastructure for Headless Agent Execution
+- ADR-010: Data Contract for Task Input
 
 ## Testing Design
 
