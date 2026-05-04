@@ -1,0 +1,13 @@
+{
+  "enabled": false,
+  "name": "FDE Enterprise Docs Generator",
+  "description": "After task completion, generates ADR if architectural decisions were made, creates hindsight notes for cross-session learning, and clears working memory. Enable for L3+ tasks.",
+  "version": "1.0.0",
+  "when": {
+    "type": "postTaskExecution"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "FDE DOCS (Tech Writer)\n\n1. ADR: Did this task involve an architectural decision (new dependency, pattern, data flow change)?\n   YES → Generate ADR in docs/adr/ with: Status, Context, Decision, Consequences.\n   NO → Skip.\n2. HINDSIGHT NOTE: Write a note capturing what was learned.\n   Project-specific → .kiro/notes/project/\n   Generic (any project) → ~/.kiro/notes/shared/\n   Format: YAML frontmatter (id, title, verification: TESTED|UNTESTED, date) + Context + Insight + Anti-patterns.\n3. Clear .kiro/specs/WORKING_MEMORY.md for next task.\n\nOutput: [ADR: path | NOTE: path | MEMORY CLEARED]"
+  }
+}

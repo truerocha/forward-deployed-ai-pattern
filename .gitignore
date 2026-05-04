@@ -7,3 +7,9 @@ __pycache__/
 dist/
 build/
 .venv/
+# FDE V3 — Factory artifacts (not committed)
+.kiro/notes/
+.kiro/meta/feedback.md
+.kiro/settings/mcp.json
+.kiro/specs/WORKING_MEMORY.md
+.kiro/specs/holdout/

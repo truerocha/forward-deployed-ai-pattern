@@ -1,0 +1,13 @@
+{
+  "enabled": false,
+  "name": "FDE Enterprise Backlog Sync",
+  "description": "After task completion, updates ALM status via MCP and creates tech-debt issues for out-of-scope items discovered during implementation. Skips silently if no MCP configured. Enable for L3+ tasks.",
+  "version": "1.0.0",
+  "when": {
+    "type": "postTaskExecution"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "FDE BACKLOG SYNC (Product Owner)\n\n1. ISSUE UPDATE: If spec references an issue (look for 'issue:' in YAML frontmatter), update via MCP:\n   - Tasks remaining → add progress comment\n   - All tasks done → set status 'in-review'\n2. TECH DEBT: If you found out-of-scope items during implementation, create new issues via MCP labeled 'tech-debt'. Reference current spec and issue. Do NOT fix them now.\n3. If no ALM MCP is configured (GitHub or Asana), skip silently.\n\nOutput: [SYNCED: #X updated | TECH-DEBT: #Y created | NO MCP - SKIPPED]"
+  }
+}

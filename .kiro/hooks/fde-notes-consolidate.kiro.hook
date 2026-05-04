@@ -1,0 +1,13 @@
+{
+  "enabled": false,
+  "name": "FDE Notes Consolidation",
+  "description": "Human-triggered. Reviews notes, archives >90 days old (without PINNED tag), merges duplicates, updates README. Proposes changes for human confirmation.",
+  "version": "1.0.0",
+  "when": {
+    "type": "userTriggered"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "FDE NOTES CONSOLIDATION\n\n1. ARCHIVE: List notes in .kiro/notes/ and ~/.kiro/notes/shared/ with date >90 days that lack [PINNED] in frontmatter. Propose moving to archive/ subdirectory.\n2. DUPLICATES: Identify notes on same topic. Propose merging.\n3. PROMOTION: Check .kiro/meta/feedback.md for patterns marked 'repeatedly useful'. Propose promoting to steering.\n4. README: Regenerate .kiro/notes/README.md with index of active notes.\n\nPropose all changes. Do NOT execute without human confirmation.\n\nOutput: [ARCHIVE: N | MERGE: M | PROMOTE: P | README: updated]"
+  }
+}

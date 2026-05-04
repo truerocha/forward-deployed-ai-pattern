@@ -1,0 +1,13 @@
+{
+  "enabled": false,
+  "name": "FDE Ship-Readiness Validation",
+  "description": "Human-triggered. Runs full validation: unit tests, Docker E2E (5min timeout), Playwright, BDD, holdout scenarios. Reports SHIP-READY or NOT READY. Enable for L3+ tasks.",
+  "version": "1.0.0",
+  "when": {
+    "type": "userTriggered"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "FDE SHIP-READINESS\n\n1. UNIT TESTS: Run project test suite. ALL must pass.\n2. DOCKER E2E: If docker-compose.test.yml exists, run 'docker compose up -d'. TIMEOUT: 5 minutes max for containers to be healthy. If timeout, report DOCKER TIMEOUT and do NOT retry. Run E2E suite. Then 'docker compose down'.\n3. PLAYWRIGHT: If playwright config exists, run tests and capture screenshots.\n4. BDD: If .feature files exist, run pytest-bdd or equivalent.\n5. HOLDOUT: If .kiro/specs/holdout/ exists, run those scenarios (agent never saw these during implementation).\n6. REPORT:\n   - Unit: PASS/FAIL (N/M)\n   - Docker: PASS/FAIL/SKIP/TIMEOUT\n   - Playwright: PASS/FAIL/SKIP\n   - BDD: PASS/FAIL/SKIP\n   - Holdout: PASS/FAIL/SKIP\n   - Overall: SHIP-READY or NOT READY (reasons)\n\nOutput: [SHIP-READY | NOT READY: reasons]"
+  }
+}
