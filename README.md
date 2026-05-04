@@ -47,7 +47,7 @@ Improvement: +67 percentage points
 ### 1. Global setup (one-time)
 
 ```bash
-git clone https://github.com/truerocha/forward-deployed-ai-pattern.git ~/factory-template
+git clone https://github.com/truerocha/forward-deployed-engineer-pattern.git ~/factory-template
 cd ~/factory-template
 bash scripts/provision-workspace.sh --global
 ```
@@ -118,7 +118,7 @@ The factory operates on four neuro-inspired principles:
 ## Repo Structure
 
 ```
-forward-deployed-ai-pattern/
+forward-deployed-engineer-pattern/
 ├── .kiro/                          # Factory template (copy to your projects)
 │   ├── steering/                   # Protocol + enterprise context
 │   ├── hooks/                      # 13 hooks (4 V2 + 9 V3)

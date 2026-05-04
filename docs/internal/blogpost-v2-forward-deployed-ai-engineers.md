@@ -190,7 +190,7 @@ The FDE pattern is not specific to any project. To apply it:
 
 **Step 5: Set up diagram generation.** For architectural changes, maintain a diagram generation script as a visual regression test.
 
-The complete artifact set — steering templates, hook templates, quality rubric, language linter, and E2E tests — is available at [github.com/your-org/forward-deployed-ai-pattern](https://github.com/your-org/forward-deployed-ai-pattern).
+The complete artifact set — steering templates, hook templates, quality rubric, language linter, and E2E tests — is available at [github.com/your-org/forward-deployed-engineer-pattern](https://github.com/your-org/forward-deployed-engineer-pattern).
 
 ---
 
@@ -226,6 +226,6 @@ The complete artifact set — steering templates, hook templates, quality rubric
 
 ---
 
-*The FDE pattern, including steering templates, hook templates, quality rubric, and E2E tests, is open source at [github.com/your-org/forward-deployed-ai-pattern](https://github.com/your-org/forward-deployed-ai-pattern).*
+*The FDE pattern, including steering templates, hook templates, quality rubric, and E2E tests, is open source at [github.com/your-org/forward-deployed-engineer-pattern](https://github.com/your-org/forward-deployed-engineer-pattern).*
 
 *If you're building with Kiro and want to try this pattern, start with the steering file — it's the single artifact that changes how the agent thinks about your project.*

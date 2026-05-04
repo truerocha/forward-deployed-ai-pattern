@@ -26,7 +26,7 @@ This creates the universal laws and shared resources that ALL your projects inhe
 
 ```bash
 # Run the provision script from the factory template repo
-git clone https://github.com/truerocha/forward-deployed-ai-pattern.git ~/factory-template
+git clone https://github.com/truerocha/forward-deployed-engineer-pattern.git ~/factory-template
 cd ~/factory-template
 bash scripts/provision-workspace.sh --global
 ```
