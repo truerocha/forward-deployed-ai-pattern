@@ -1,9 +1,9 @@
-# FDE V3.0 — Autonomous Code Factory Blueprint (Dark Factory Pattern)
+# FDE V3.0 — Autonomous Code Factory Blueprint (Autonomous Code Factory Pattern)
 
 > Status: **design document — pending implementation**
 > Date: 2026-05-03
 > Role: Staff Engineer as **Director of Architecture** managing a squad of AI agents
-> Pattern: Dark Factory (Level 4 — AI-generated with automated review, human approves outcomes)
+> Pattern: Autonomous Code Factory (Level 4 — AI-generated with automated review, human approves outcomes)
 > Scope: End-to-end — from ALM intake through agent execution to ship-ready code
 > Stack: GitHub Issues + Asana | GitHub Actions + GitLab CI Ultimate (mirror) | Playwright + Docker + pytest + BDD
 > Research: IBM Agent Factories (arXiv:2603.25719), Meta CCA (arXiv:2512.10398), StrongDM Attractor (NLSpec), Shapiro 5 Levels
@@ -90,7 +90,7 @@ The Staff Engineer does NOT write code. The Staff Engineer:
 - Approves outcomes (the MR)
 - Refines the factory (meta-agent feedback)
 
-### 1.2 Dark Factory Level
+### 1.2 Autonomy Level
 
 | Level | Description | Human Role | Our Target |
 |-------|-------------|-----------|------------|

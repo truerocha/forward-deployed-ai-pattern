@@ -27,7 +27,7 @@ When Enterprise hooks fire, the agent assumes a persona with a defined output co
 
 ## Delivery Rules
 
-- Agent ALWAYS works on feature branches (never main/master)
+- Agent ALWAYS works on feature branches (never main)
 - Agent pushes with `-u` flag to set tracking
 - Agent opens MR/PR via MCP with structured body (summary, spec ref, validation results)
 - Agent NEVER merges — human approves outcomes

@@ -175,7 +175,7 @@ Afternoon:
 | Hook not firing | `"enabled": false` in hook file | Change to `"enabled": true` |
 | MCP not connecting | Token expired or not set | Check `echo $GITHUB_TOKEN`, regenerate if needed |
 | Agent ignores steering | Steering not loaded | Type `#fde` in chat to load, or check `inclusion: manual` in frontmatter |
-| Circuit breaker stops everything | ENVIRONMENT error detected | Fix the infrastructure issue (Docker, ports, permissions), then retry |
+| Circuit breaker halts all operations | ENVIRONMENT error detected | Fix the infrastructure issue (Docker, ports, permissions), then retry |
 | DoR gate blocks execution | Spec missing `status: ready` | Add YAML frontmatter with `status: ready` |
 | Tests keep failing after 3 attempts | Agent stuck in loop | Check if it's an environment issue; review the circuit breaker output |
 
@@ -523,7 +523,7 @@ async def client():
 | 1 | Hook not firing | Agent writes without adversarial challenge | `"enabled": false` in hook file | Edit hook file: change to `"enabled": true` |
 | 2 | MCP not connecting | "No MCP configured" in hook output | Token expired or env var not set | Run `echo $GITHUB_TOKEN` — if empty, set it in `~/.zshrc` and `source ~/.zshrc` |
 | 3 | Agent ignores steering | Agent doesn't mention pipeline chain or module boundaries | Steering not loaded in chat | Type `#fde` at the start of your message to load the steering |
-| 4 | Circuit breaker stops everything | Agent reports ENVIRONMENT ERROR on every command | Real infrastructure issue (Docker down, port in use) | Fix the infra issue first: restart Docker, kill process on port, etc. |
+| 4 | Circuit breaker halts all operations | Agent reports ENVIRONMENT ERROR on every command | Real infrastructure issue (Docker down, port in use) | Fix the infra issue first: restart Docker, stop process on port, etc. |
 | 5 | DoR gate blocks execution | "Spec not marked as READY" | Missing YAML frontmatter | Add `---\nstatus: ready\n---` at the top of the spec file |
 | 6 | Tests keep failing after 3 attempts | Agent reports "3 approaches failed, rolling back" | Problem may be too complex for current spec | Refine the spec: add more constraints, break into smaller tasks |
 | 7 | Ship-readiness Docker timeout | "DOCKER TIMEOUT — containers failed to start" | Docker Compose health checks failing | Check `docker compose logs` manually; fix Dockerfile or health check |

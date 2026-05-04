@@ -13,7 +13,7 @@
 
 ## What Is This?
 
-This repo is a **factory template** for enterprise-grade AI-assisted software development using [Amazon Kiro](https://kiro.dev). It implements the **Dark Factory pattern** (Level 4 autonomy) where AI agents handle the full development loop — writing, testing, reviewing, and packaging code — while the human engineer operates as **Director of Architecture**, writing specs and approving outcomes.
+This repo is a **factory template** for enterprise-grade AI-assisted software development using [Amazon Kiro](https://kiro.dev). It implements the **Autonomous Code Factory pattern** (Level 4 autonomy) where AI agents handle the full development loop — writing, testing, reviewing, and packaging code — while the human engineer operates as **Director of Architecture**, writing specs and approving outcomes.
 
 The pattern is built on **Forward Deployed Engineers (FDEs)** — AI agents deployed into a project's specific context: its pipeline architecture, its knowledge artifacts, its quality standards, and its governance boundaries. An FDE is not a general-purpose coding assistant. It is an engineering partner that knows your system.
 
@@ -128,7 +128,7 @@ forward-deployed-ai-pattern/
 │   └── settings/                   # MCP config template
 ├── docs/
 │   ├── design/                     # V2 design document (research foundations)
-│   ├── blueprint/                  # V3 Dark Factory blueprint + artifacts + deploy guide
+│   ├── blueprint/                  # V3 Autonomous Code Factory blueprint + artifacts + deploy guide
 │   ├── guides/                     # Adoption guide (onboarding walkthrough)
 │   └── global-steerings/           # Templates for ~/.kiro/steering/
 ├── examples/
