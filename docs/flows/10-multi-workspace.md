@@ -18,3 +18,7 @@ flowchart TD
     NOTEC --> SHARED
     SHARED --> NEXT[Next Task in Any Workspace]
 ```
+
+## Related
+- ADR: [ADR-005 Multi-Workspace](../adr/ADR-005-multi-workspace-factory-topology.md)
+- Blueprint: [§2 Factory Topology](../blueprint/fde-blueprint-design.md)

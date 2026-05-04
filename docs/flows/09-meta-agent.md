@@ -15,3 +15,7 @@ flowchart TD
     TEST -->|Pass| COMMIT[Commit Hook Changes]
     TEST -->|Not met| ROLLBACK[Rollback Hook Changes]
 ```
+
+## Related
+- Hook: [`fde-prompt-refinement`](../../.kiro/hooks/fde-prompt-refinement.kiro.hook)
+- Blueprint: [§15 Observability](../blueprint/fde-blueprint-design.md)

@@ -14,3 +14,7 @@ flowchart TD
     HOLDOUT -->|Pass| READY[SHIP-READY]
     HOLDOUT -->|Not met| REPORT3[NOT READY - Holdout Gaps]
 ```
+
+## Related
+- Hook: [`fde-ship-readiness`](../../.kiro/hooks/fde-ship-readiness.kiro.hook)
+- Blueprint: [§8 Ship-Readiness](../blueprint/fde-blueprint-design.md)

@@ -16,3 +16,7 @@ flowchart TD
     DECIDE -->|No| GATHER[Gather Missing Context]
     GATHER --> WRITE
 ```
+
+## Related
+- Hook: [`fde-adversarial-gate`](../../.kiro/hooks/fde-adversarial-gate.kiro.hook)
+- ADR: [ADR-001 Synaptic Engineering](../adr/ADR-001-synaptic-engineering-foundation.md)

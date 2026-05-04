@@ -14,3 +14,7 @@ flowchart LR
     HUMAN -->|Approve| MERGE[Merge to Main]
     HUMAN -->|Request Changes| REFINE[Refine Spec]
 ```
+
+## Related
+- Hook: [`fde-enterprise-release`](../../.kiro/hooks/fde-enterprise-release.kiro.hook)
+- ADR: [ADR-006 Enterprise ALM](../adr/ADR-006-enterprise-alm-integration.md)

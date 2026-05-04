@@ -13,3 +13,7 @@ flowchart LR
     FM -->|No| HUMAN
     FM -->|Yes| AGENT[Agent Pipeline Triggered]
 ```
+
+## Related
+- Hook: [`fde-dor-gate`](../../.kiro/hooks/fde-dor-gate.kiro.hook)
+- ADR: [ADR-002 Spec as Control Plane](../adr/ADR-002-spec-as-control-plane.md)

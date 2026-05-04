@@ -10,3 +10,7 @@ flowchart LR
     VALIDATION -->|Holdout not met| REVIEW
     SHIPPED -->|MR merged| CLOSED[CLOSED]
 ```
+
+## Related
+- Hook: [`fde-dor-gate`](../../.kiro/hooks/fde-dor-gate.kiro.hook)
+- ADR: [ADR-002 Spec as Control Plane](../adr/ADR-002-spec-as-control-plane.md)

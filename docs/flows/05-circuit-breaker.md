@@ -15,3 +15,7 @@ flowchart TD
     APPROACH -->|No| FIX
     APPROACH -->|Yes| ROLLBACK[Rollback All - Report to Human]
 ```
+
+## Related
+- Hook: [`fde-circuit-breaker`](../../.kiro/hooks/fde-circuit-breaker.kiro.hook)
+- ADR: [ADR-004 Circuit Breaker](../adr/ADR-004-circuit-breaker-error-classification.md)

@@ -9,6 +9,49 @@
 [![Hooks](https://img.shields.io/badge/hooks-13%20(4%20V2%20%2B%209%20V3)-blue)]()
 [![Autonomy Level](https://img.shields.io/badge/level-L4%20Autonomous%20Factory-purple)]()
 
+
+## Architecture
+
+![Autonomous Code Factory Architecture](docs/architecture/autonomous-code-factory.png)
+
+> Spine: Staff Engineer → ALM → Spec → Agent Execution → CI/CD → Ship-Readiness → Delivery → Staff Engineer approves outcome.
+> Branches: Cross-session learning (notes) and meta-agent (prompt refinement).
+
+---
+
+## Documentation Index
+
+| Document | Purpose | Start Here If... |
+|----------|---------|-----------------|
+| **[Adoption Guide](docs/guides/fde-adoption-guide.md)** | Step-by-step setup and first task walkthrough | You want to start using the factory today |
+| **[Blueprint](docs/blueprint/fde-blueprint-design.md)** | Full architecture (16 sections, synaptic engineering) | You want to understand the design decisions |
+| **[Hook Deploy Guide](docs/blueprint/fde-hooks-deploy-guide.md)** | Exact JSON for all 13 hooks | You want to deploy or customize hooks |
+| **[Design Document (DDR)](docs/architecture/design-document.md)** | Requirements, components, information flow | You want the formal tech design |
+| **[Feature Flows](docs/flows/README.md)** | 10 Mermaid diagrams showing each feature's usability | You want to see how each feature works |
+| **[ADRs](docs/adr/)** | 7 Architecture Decision Records | You want to understand why decisions were made |
+| **[V2 Design Doc](docs/design/forward-deployed-ai-engineers.md)** | Research foundations and protocol theory | You want the academic grounding |
+| **[New Blogpost](docs/blogpost-autonomous-code-factory.md)** | Public-facing summary of the strategy | You want to share with your team |
+
+### Code ↔ Docs Cross-Reference
+
+| Code Artifact | Documentation |
+|--------------|---------------|
+| `.kiro/hooks/fde-adversarial-gate.kiro.hook` | [ADR-003](docs/adr/ADR-003-agentic-tdd-halting-condition.md), [Flow 04](docs/flows/04-adversarial-gate.md) |
+| `.kiro/hooks/fde-circuit-breaker.kiro.hook` | [ADR-004](docs/adr/ADR-004-circuit-breaker-error-classification.md), [Flow 05](docs/flows/05-circuit-breaker.md) |
+| `.kiro/hooks/fde-test-immutability.kiro.hook` | [ADR-003](docs/adr/ADR-003-agentic-tdd-halting-condition.md), [Flow 03](docs/flows/03-agentic-tdd.md) |
+| `.kiro/hooks/fde-enterprise-release.kiro.hook` | [ADR-006](docs/adr/ADR-006-enterprise-alm-integration.md), [Flow 07](docs/flows/07-enterprise-release.md) |
+| `.kiro/hooks/fde-ship-readiness.kiro.hook` | [Flow 06](docs/flows/06-ship-readiness.md) |
+| `.kiro/hooks/fde-enterprise-docs.kiro.hook` | [ADR-007](docs/adr/ADR-007-cross-session-learning-notes.md), [Flow 08](docs/flows/08-cross-session-learning.md) |
+| `.kiro/hooks/fde-prompt-refinement.kiro.hook` | [Flow 09](docs/flows/09-meta-agent.md) |
+| `.kiro/hooks/fde-notes-consolidate.kiro.hook` | [ADR-007](docs/adr/ADR-007-cross-session-learning-notes.md) |
+| `.kiro/hooks/fde-alternative-exploration.kiro.hook` | [Flow 04](docs/flows/04-adversarial-gate.md) |
+| `.kiro/steering/fde.md` | [V2 Design Doc](docs/design/forward-deployed-ai-engineers.md), [Blueprint §0](docs/blueprint/fde-blueprint-design.md) |
+| `.kiro/steering/fde-enterprise.md` | [ADR-006](docs/adr/ADR-006-enterprise-alm-integration.md), [Blueprint §3](docs/blueprint/fde-blueprint-design.md) |
+| `scripts/provision-workspace.sh` | [Adoption Guide §Step 1-2](docs/guides/fde-adoption-guide.md) |
+| `scripts/generate_architecture_diagram.py` | [Architecture Diagram](docs/architecture/autonomous-code-factory.png) |
+
+
+
 ---
 
 ## What Is This?
