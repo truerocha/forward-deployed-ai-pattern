@@ -52,12 +52,18 @@ See `docs/architecture/autonomous-code-factory.png` for the system diagram.
 | Component | Owned State | Responsibility |
 |-----------|-------------|----------------|
 | Spec Control Plane | `.kiro/specs/` | Stores work items, acceptance criteria, holdout scenarios |
-| Hook Engine | `.kiro/hooks/` (13 hooks) | Gates execution at preToolUse, postToolUse, preTask, postTask, userTriggered |
+| Hook Engine | `.kiro/hooks/` (14 hooks) | Gates execution at preToolUse, postToolUse, preTask, postTask, userTriggered |
 | Steering Context | `.kiro/steering/` + `~/.kiro/steering/` | Provides project-specific and universal context to the agent |
 | Notes System | `.kiro/notes/` + `~/.kiro/notes/shared/` | Persists cross-session knowledge with verification status |
 | Meta System | `.kiro/meta/` | Stores human feedback and prompt refinement history |
 | MCP Integration | `.kiro/settings/mcp.json` | Connects to GitHub, GitLab, Asana for ALM operations |
-| Provision Script | `scripts/provision-workspace.sh` | Automates global setup and project onboarding |
+| Task Templates | `docs/templates/` | Portable task schemas for GitHub Projects, Asana, GitLab Ultimate |
+| ALM Validation | `scripts/validate-alm-api.sh` | Pre-flight API connectivity checks for all platforms |
+| Onboarding Pipeline | `scripts/pre-flight-fde.sh` → `validate-deploy-fde.sh` → `code-factory-setup.sh` | Three-script E2E onboarding with linter mode |
+| Cloud Infrastructure | `infra/terraform/` | Terraform IaC for ECR, ECS Fargate, Bedrock, S3, Secrets Manager, VPC |
+| Strands Agent | `infra/docker/` | Headless agent container for ECS Fargate execution |
+| IAM Validator | `scripts/validate-aws-iam.py` | Per-service AWS IAM permission checks |
+| Provision Script | `scripts/provision-workspace.sh` | Legacy manual onboarding (--global / --project) |
 
 ### Information Flow
 
@@ -82,6 +88,8 @@ See `docs/adr/` for detailed Architecture Decision Records:
 - ADR-005: Multi-Workspace Factory Topology
 - ADR-006: Enterprise ALM Integration via MCP
 - ADR-007: Cross-Session Learning via Notes
+- ADR-008: Multi-Platform Project Tooling (GitHub Projects, Asana, GitLab Ultimate)
+- ADR-009: AWS Cloud Infrastructure for Headless Agent Execution
 
 ## Testing Design
 

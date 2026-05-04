@@ -14,3 +14,6 @@ Each Mermaid diagram represents the usability flow of a specific factory feature
 8. [Cross-Session Learning Flow](08-cross-session-learning.md)
 9. [Meta-Agent Flow](09-meta-agent.md)
 10. [Multi-Workspace Orchestration Flow](10-multi-workspace.md)
+11. [Multi-Platform Work Intake Flow](11-multi-platform-intake.md)
+12. [Staff Engineer Onboarding Flow](12-staff-engineer-onboarding.md)
+13. [Cloud Orchestration Flow](13-cloud-orchestration.md)

@@ -13,3 +13,8 @@ build/
 .kiro/settings/mcp.json
 .kiro/specs/WORKING_MEMORY.md
 .kiro/specs/holdout/
+infra/terraform/.terraform/
+infra/terraform/terraform.tfstate
+infra/terraform/terraform.tfstate.backup
+infra/terraform/tfplan
+infra/terraform/factory.tfvars

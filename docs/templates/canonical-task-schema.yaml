@@ -1,0 +1,59 @@
+# Canonical Task Schema — Autonomous Code Factory
+# This schema defines the portable format that all platform adapters map to.
+# The agent uses this schema internally regardless of which ALM platform sourced the task.
+#
+# Usage:
+#   - GitHub adapter maps issue fields → this schema
+#   - Asana adapter maps task fields → this schema
+#   - GitLab adapter maps issue fields → this schema
+#   - The agent reads this schema to understand the task context
+#
+# Reference: ADR-008 Multi-Platform Project Tooling
+
+# ─── Required Fields ────────────────────────────────────────────
+id: ""                    # Platform-native ID (e.g., "GH-123", "ASANA-456", "GL-789")
+title: ""                 # One-line summary
+description: ""           # Full description with acceptance criteria
+status: "backlog"         # backlog | in-progress | in-review | done | blocked
+source: ""                # github | asana | gitlab
+
+# ─── Optional Fields ────────────────────────────────────────────
+priority: "P2"            # P0 (critical) | P1 (high) | P2 (medium) | P3 (low)
+level: "L3"               # L2 (targeted fix) | L3 (cross-module) | L4 (architectural)
+labels: []                # Platform-native labels/tags
+assignee: ""              # Human owner
+spec_path: ""             # Path to .kiro/specs/ file (created by agent if blank)
+repo: ""                  # owner/repo (for Asana tasks that reference external repos)
+epic: ""                  # Parent epic/project grouping
+iteration: ""             # Sprint/iteration name
+created_at: ""            # ISO 8601 timestamp
+updated_at: ""            # ISO 8601 timestamp
+
+# ─── Platform-Specific Metadata ─────────────────────────────────
+platform_metadata:
+  github:
+    issue_number: null    # GitHub issue number
+    project_id: null      # GitHub Projects v2 ID
+    milestone: null       # GitHub milestone
+  asana:
+    task_gid: null        # Asana task GID
+    project_gid: null     # Asana project GID
+    section_gid: null     # Asana section (board column) GID
+    workspace_gid: null   # Asana workspace GID
+  gitlab:
+    issue_iid: null       # GitLab issue IID (project-scoped)
+    project_id: null      # GitLab project ID
+    board_id: null        # GitLab board ID
+    pipeline_id: null     # Last CI pipeline ID
+
+# ─── Status Mapping ─────────────────────────────────────────────
+# Each platform maps its native status representation to the canonical statuses.
+# The agent uses canonical statuses for all internal logic.
+#
+# | Canonical    | GitHub Projects  | Asana Section  | GitLab Board List |
+# |-------------|-----------------|----------------|-------------------|
+# | backlog     | "Backlog"       | "Backlog"      | "Open"            |
+# | in-progress | "In Progress"   | "In Progress"  | "In Progress"     |
+# | in-review   | "In Review"     | "In Review"    | "In Review"       |
+# | done        | "Done"          | "Done"         | "Closed"          |
+# | blocked     | "Blocked"       | "Blocked"      | "Blocked"         |

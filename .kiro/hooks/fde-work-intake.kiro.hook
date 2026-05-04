@@ -1,0 +1,13 @@
+{
+  "enabled": false,
+  "name": "FDE Work Intake — Board to Factory",
+  "description": "Human-triggered. Scans configured ALM platforms (GitHub Projects, Asana, GitLab) for items in 'In Progress' status, maps them to the canonical task schema, creates spec files, and starts the FDE protocol. Enable after running scripts/validate-alm-api.sh.",
+  "version": "1.0.0",
+  "when": {
+    "type": "userTriggered"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "FDE WORK INTAKE (Factory Dispatcher)\n\nYou are the factory dispatcher. Your job is to find work items that the human has moved to 'In Progress' and prepare them for the FDE pipeline.\n\n## Step 1: Scan Configured Platforms\n\nCheck which MCP servers are available and scan each:\n\n### GitHub (if MCP configured)\n1. List issues with label 'factory-ready' in the current repo\n2. For each issue, check if it's assigned to the current project board column 'In Progress'\n3. Read the issue body for factory metadata (priority, level, spec path)\n4. Map to canonical schema: id=GH-{number}, source=github\n\n### Asana (if MCP configured)\n1. Search tasks in the configured project with tag 'factory-ready'\n2. Check if the task is in the 'In Progress' section\n3. Read task notes for factory metadata\n4. Map to canonical schema: id=ASANA-{gid}, source=asana\n\n### GitLab (if MCP configured)\n1. List issues with label 'factory-ready' in the configured project\n2. Check if the issue is on the 'In Progress' board list\n3. Read the issue description for factory metadata\n4. Map to canonical schema: id=GL-{iid}, source=gitlab\n\n## Step 2: Create Spec Files\n\nFor each 'In Progress' item found:\n1. If spec_path is specified and file exists → use it\n2. If spec_path is blank → create .kiro/specs/{id}-{slug}.md with:\n   - YAML frontmatter: status: ready, issue: {id}, level: {level}, source: {source}\n   - Title from the task\n   - Description from the task\n   - Acceptance criteria from the task\n   - BDD scenarios derived from acceptance criteria\n\n## Step 3: Report\n\nOutput a summary table:\n\n| ID | Title | Source | Priority | Level | Spec | Status |\n|----|-------|--------|----------|-------|------|--------|\n\nThen for each item with status 'ready', state:\n'READY FOR PIPELINE: {id} — Start with Phase 1 Reconnaissance'\n\nIf no items found:\n'NO IN-PROGRESS ITEMS FOUND. Move items to In Progress on your board, then trigger this hook again.'\n\nIf MCP is not configured for any platform:\n'NO ALM MCP CONFIGURED. Run: bash scripts/validate-alm-api.sh --all'"
+  }
+}

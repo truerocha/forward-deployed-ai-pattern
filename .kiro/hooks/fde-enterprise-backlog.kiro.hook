@@ -1,13 +1,13 @@
 {
   "enabled": false,
   "name": "FDE Enterprise Backlog Sync",
-  "description": "After task completion, updates ALM status via MCP and creates tech-debt issues for out-of-scope items discovered during implementation. Skips silently if no MCP configured. Enable for L3+ tasks.",
-  "version": "1.0.0",
+  "description": "After task completion, updates ALM status via MCP across GitHub Projects, Asana, and GitLab. Creates tech-debt issues for out-of-scope items. Skips silently per platform if MCP not configured. Enable for L3+ tasks.",
+  "version": "2.0.0",
   "when": {
     "type": "postTaskExecution"
   },
   "then": {
     "type": "askAgent",
-    "prompt": "FDE BACKLOG SYNC (Product Owner)\n\n1. ISSUE UPDATE: If spec references an issue (look for 'issue:' in YAML frontmatter), update via MCP:\n   - Tasks remaining → add progress comment\n   - All tasks done → set status 'in-review'\n2. TECH DEBT: If you found out-of-scope items during implementation, create new issues via MCP labeled 'tech-debt'. Reference current spec and issue. Do NOT fix them now.\n3. If no ALM MCP is configured (GitHub or Asana), skip silently.\n\nOutput: [SYNCED: #X updated | TECH-DEBT: #Y created | NO MCP - SKIPPED]"
+    "prompt": "FDE BACKLOG SYNC (Product Owner)\n\nYou sync task progress back to the originating ALM platform. Read the spec YAML frontmatter for 'issue:' and 'source:' fields.\n\n## Step 1: Identify Source Platform\n\nRead the spec frontmatter:\n- source: github → use GitHub MCP\n- source: asana → use Asana MCP\n- source: gitlab → use GitLab MCP\n- No source field → check issue format: GH-* = GitHub, ASANA-* = Asana, GL-* = GitLab\n\n## Step 2: Update Status\n\nBased on task completion state:\n- Tasks remaining → add progress comment to the issue/task\n- All tasks done → set status to 'in-review' on the board\n  - GitHub: update project field to 'In Review'\n  - Asana: move task to 'In Review' section\n  - GitLab: add label 'workflow::in-review'\n\n## Step 3: Tech Debt Capture\n\nIf you found out-of-scope items during implementation:\n- Create new issues/tasks on the SAME platform labeled 'tech-debt'\n- Reference current spec and parent issue\n- Do NOT fix them now\n\n## Step 4: Cross-Platform Sync (if applicable)\n\nIf the task references multiple platforms (e.g., Asana task + GitHub repo):\n- Update the Asana task status\n- Also add a comment to the GitHub PR referencing the Asana task\n\nIf no ALM MCP is configured for the source platform, skip silently.\n\nOutput: [SYNCED: {platform} #{id} updated | TECH-DEBT: #{id} created | NO MCP - SKIPPED]"
   }
 }

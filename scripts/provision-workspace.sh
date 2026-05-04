@@ -86,6 +86,12 @@ STATE
         log_warn "GITLAB_TOKEN not set — MCP GitLab won't work (optional)"
     fi
 
+    if [ -n "${ASANA_ACCESS_TOKEN:-}" ]; then
+        log_ok "ASANA_ACCESS_TOKEN is set"
+    else
+        log_warn "ASANA_ACCESS_TOKEN not set — MCP Asana won't work (optional)"
+    fi
+
     echo ""
     log_ok "Global setup complete. Run with --project in each project directory to onboard."
     echo ""
@@ -127,6 +133,14 @@ setup_project() {
         log_err "Template steerings not found"
     fi
 
+    # 3.5. Copy task templates
+    if [ -d "$SCRIPT_DIR/docs/templates" ]; then
+        mkdir -p docs/templates
+        cp "$SCRIPT_DIR"/docs/templates/task-template-*.md docs/templates/ 2>/dev/null || true
+        cp "$SCRIPT_DIR"/docs/templates/canonical-task-schema.yaml docs/templates/ 2>/dev/null || true
+        log_ok "Task templates copied to docs/templates/"
+    fi
+
     # 4. Copy templates
     for tmpl in specs/WORKING_MEMORY.md notes/README.md meta/feedback.md meta/refinement-log.md; do
         if [ -f "$SCRIPT_DIR/.kiro/$tmpl" ]; then
@@ -166,6 +180,13 @@ setup_project() {
     echo "    L3: All L2 + dor-gate, dod-gate, pipeline-validation, enterprise-*"
     echo "    L4: All L3 + alternative-exploration"
     echo "    Edit each .kiro.hook file: change \"enabled\": false → true"
+    echo ""
+    log_warn "OPTIONAL: Configure ALM platforms for board-to-factory automation:"
+    echo "    1. Set environment variables (GITHUB_TOKEN, ASANA_ACCESS_TOKEN, GITLAB_TOKEN)"
+    echo "    2. Run: bash scripts/validate-alm-api.sh --all"
+    echo "    3. Enable MCP servers in .kiro/settings/mcp.json (set disabled: false)"
+    echo "    4. Enable fde-work-intake hook for board scanning"
+    echo "    5. Use task templates from docs/templates/ when creating board items"
     echo ""
     log_ok "Project onboarded. Open in Kiro IDE and type #fde to verify."
     echo ""

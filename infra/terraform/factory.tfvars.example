@@ -1,0 +1,13 @@
+# Copy to factory.tfvars and customize:
+#   cp factory.tfvars.example factory.tfvars
+
+aws_region  = "us-east-1"
+environment = "dev"
+
+bedrock_model_id    = "anthropic.claude-sonnet-4-20250514-v1:0"
+enable_agentcore    = false
+enable_ecs_service  = false
+agent_cpu           = "1024"
+agent_memory        = "2048"
+agent_desired_count = 1
+vpc_cidr            = "10.0.0.0/16"
