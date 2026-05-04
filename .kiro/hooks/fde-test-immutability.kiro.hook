@@ -1,0 +1,14 @@
+{
+  "enabled": false,
+  "name": "FDE Test Immutability Gate",
+  "description": "Blocks writes to human-approved test files. The agent must fix production code, never relax approved tests. Enable for L2+ tasks. Part of Anti-SPOF 1 (Lazy Mocking).",
+  "version": "1.0.0",
+  "when": {
+    "type": "preToolUse",
+    "toolTypes": ["write"]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "FDE TEST IMMUTABILITY GATE\n\nYou are about to write to a file. Check:\n\n1. Is this file a test file? (matches *.test.*, *.spec.*, test_*, *_test.go, *Test.java)\n2. If YES: Does it contain the marker '// @human-approved' or '# @human-approved' at the top?\n3. If APPROVED TEST: ACCESS DENIED. You MUST fix production code to satisfy the test. Do NOT modify assertions, remove test cases, or change expected values.\n4. If test WITHOUT marker: Proceed (not yet approved).\n5. If NOT a test file: Proceed normally.\n\nState: [NOT A TEST | UNAPPROVED TEST - PROCEED | APPROVED TEST - ACCESS DENIED]"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "enabled": false,
+  "name": "FDE Alternative Exploration",
+  "description": "Human-triggered for L4 tasks. Agent generates 2 distinct approaches with trade-offs. Human chooses before implementation begins. Enable only for L4 architectural tasks.",
+  "version": "1.0.0",
+  "when": {
+    "type": "userTriggered"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "FDE ALTERNATIVE EXPLORATION (L4)\n\nGenerate 2 distinct approaches for the current task.\n\nFor each:\n\n## Approach [A/B]: [Name]\n- Architecture: [design, modules, data flow]\n- Trade-offs: [gains vs losses]\n- Complexity: [estimated LOC, files, dependencies]\n- Risk: [what could go wrong]\n- Constraint alignment: [how it satisfies MUST/MUST NOT]\n\n## Recommendation\nWhich and why? What would change your mind?\n\nDo NOT implement. Present both. Human decides.\n\nOutput: [APPROACHES PRESENTED - AWAITING DECISION]"
+  }
+}

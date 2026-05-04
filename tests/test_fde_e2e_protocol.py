@@ -25,7 +25,7 @@ import pytest
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 HOOKS_DIR = os.path.join(ROOT, ".kiro", "hooks")
 STEERING_DIR = os.path.join(ROOT, ".kiro", "steering")
-DESIGN_DOC = os.path.join(ROOT, "docs", "forward-deployed-ai-engineers.md")
+DESIGN_DOC = os.path.join(ROOT, "docs", "design", "forward-deployed-ai-engineers.md")
 
 
 # ===========================================================================

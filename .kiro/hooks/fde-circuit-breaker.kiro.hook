@@ -1,0 +1,14 @@
+{
+  "enabled": false,
+  "name": "FDE Circuit Breaker",
+  "description": "After shell command failure, classifies error as CODE (agent can fix) or ENVIRONMENT (human must fix). Prevents the agent from destroying correct code trying to fix infrastructure problems. Enable for L2+ tasks. Part of Anti-SPOF 3 (Token Burner Loop).",
+  "version": "1.0.0",
+  "when": {
+    "type": "postToolUse",
+    "toolTypes": ["shell"]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "FDE CIRCUIT BREAKER\n\nA shell command just executed. If it SUCCEEDED (exit 0), continue normally.\n\nIf it FAILED:\n1. Read ONLY the last 40 lines of error output.\n2. CLASSIFY:\n   ENVIRONMENT: EADDRINUSE, ECONNREFUSED, timeout, permission denied, EACCES, ENOMEM, disk full, package not found, docker not running, port in use, credential expired, network error\n   CODE: SyntaxError, TypeError, AssertionError, ImportError (project modules), test assertion failed, compilation error\n3. If ENVIRONMENT: STOP. Do NOT touch source code. Report: 'ENVIRONMENT ERROR: [type]. Human action required.'\n4. If CODE: Is this the same error as your previous attempt?\n   Same error, same approach → ABANDON approach, try fundamentally different design.\n   Max 3 attempts per approach. After 3 failed approaches → ROLLBACK and report.\n5. Before fixing: re-read .kiro/specs/WORKING_MEMORY.md to confirm no constraint violations.\n\nState: [SUCCESS | ENVIRONMENT - STOP | CODE - ATTEMPT N/3]"
+  }
+}

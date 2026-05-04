@@ -1,0 +1,13 @@
+{
+  "enabled": false,
+  "name": "FDE Prompt Refinement (Meta-Agent)",
+  "description": "Human-triggered. Analyzes completion reports and human feedback to suggest improvements to hook prompts and steerings. Also generates Factory Health Report with aggregated metrics. Threshold: 2+ feedback items required before suggesting changes.",
+  "version": "1.0.0",
+  "when": {
+    "type": "userTriggered"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "FDE META-AGENT\n\n1. HEALTH REPORT: Read recent completion reports in .kiro/specs/. Calculate:\n   - Tasks completed (by level)\n   - DoD outcomes (PASS/PARTIAL/BLOCK)\n   - Circuit breaker activations\n   - Notes generated vs consulted\n2. FEEDBACK ANALYSIS: Read .kiro/meta/feedback.md. Identify:\n   - Hooks reported as 'not useful' or 'consistently N/A'\n   - Missing checks reported by human\n   - Steerings reported as 'too verbose' or 'missing context'\n3. SUGGESTIONS: For each pattern (threshold: 2+ items):\n   - What to change (file + section)\n   - Current text\n   - Proposed text\n   - Justification\n   - Risk assessment\n4. SAFETY: Suggestions only. Human applies manually. Never auto-modify hooks.\n\nOutput: [HEALTH REPORT + N SUGGESTIONS | NO CHANGES NEEDED]"
+  }
+}
