@@ -32,7 +32,7 @@ This cycle produces locally correct fixes that cascade into system-level failure
 | 4 | **Stateless interaction** | Each prompt is treated as independent — no accumulated context |
 | 5 | **Symptom-level fixes** | The agent fixes the reported instance, not the bug class |
 
-These are not edge cases. Esposito et al. (2025) found that **93% of studies on GenAI in software architecture lack formal validation** of AI-generated output. Vandeputte et al. (2025) advocate for "verification and mitigation at all levels, not just unit tests." The Shonan Meeting 222 report (2025) reached consensus that "greenfield approaches don't generalize to brownfield" — AI excels at generating new code but struggles with the complexity of established systems.
+These are not edge cases. Esposito et al. (2025) found that **93% of studies on GenAI in software architecture lack formal validation** of AI-generated output. Vandeputte et al. (2025) advocate for "verification and mitigation at all levels, not unit tests." The Shonan Meeting 222 report (2025) reached consensus that "greenfield approaches don't generalize to brownfield" — AI excels at generating new code but struggles with the complexity of established systems.
 
 The root cause, stated as a design principle:
 

@@ -97,7 +97,7 @@ Also added 10 BP addressability entries in `evidence_bp_addressability.yaml` for
 ## Phase 3.b: Pipeline Testing
 
 - **CONTRACT**: Ran `python3 scripts/run_tests.py --scope contract` — 6 cross-layer invariants pass
-- **EDGE (E4)**: publish_sanitizer.py accepts the new severity values — no schema change, just different enum values
+- **EDGE (E4)**: publish_sanitizer.py accepts the new severity values — no schema change, only different enum values
 - **SEVERITY DISTRIBUTION**: Verified output now shows 3 severity levels (HIGH: 12, MEDIUM: 28, LOW: 5) — non-flat
 - **KNOWLEDGE**: Ran `python3 scripts/run_tests.py --scope knowledge` — mapping layer tests pass
 - **PRODUCT**: test_product_smoke.py does not exist — pipeline output not validated end-to-end

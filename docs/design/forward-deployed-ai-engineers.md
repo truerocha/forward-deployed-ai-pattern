@@ -100,11 +100,11 @@ This paper proposes five foundational pillars for GenAI-native systems: **reliab
 
 **Principle 1: Design for fault-tolerance, not pass/fail.** Traditional software uses binary pass/fail criteria. GenAI-native systems should use "utility-based sufficiency criteria" — the output is sufficiently useful most of the time. This reframes how we evaluate AI-generated code: not "does it compile?" but "does the pipeline produce correct output for the user?"
 
-**Principle 2: Include verification and mitigation at all levels.** The paper advocates for integrating verification throughout the software stack and lifecycle, not just at the unit test level. Dependent assets should not presume the reliability of upstream outputs. This directly supports our Phase 3.b requirement to test upstream and downstream in the data journey, not just the changed node.
+**Principle 2: Include verification and mitigation at all levels.** The paper advocates for integrating verification throughout the software stack and lifecycle, not only at the unit test level. Dependent assets should not presume the reliability of upstream outputs. This directly supports our Phase 3.b requirement to test upstream and downstream in the data journey, not only the changed node.
 
 **Principle 3: Minimize dependency on cognitive processing.** A foundational guideline is to systematically reduce reliance on open-ended GenAI processing in critical paths. The paper proposes a "programmable router" pattern that routes routine work through traditional logic and reserves cognitive processing for exceptional cases. Applied to our protocol: the agent should use deterministic verification (contract tests, schema checks, smoke tests) wherever possible, reserving judgment calls for genuinely ambiguous situations.
 
-**Principle 4: Systematic quality verification and retrospectives.** The paper advocates for continuous learning and feedback loops at strategic points, drawing from Kaizen and Six Sigma methodologies. Our Phase 3.c (5W2H validation) and Phase 3.d (5 Whys for issues) are direct implementations of this principle — structured retrospective reasoning applied at the task level, not just at the sprint level.
+**Principle 4: Systematic quality verification and retrospectives.** The paper advocates for continuous learning and feedback loops at strategic points, drawing from Kaizen and Six Sigma methodologies. Our Phase 3.c (5W2H validation) and Phase 3.d (5 Whys for issues) are direct implementations of this principle — structured retrospective reasoning applied at the task level, not only at the sprint level.
 
 **Principle 5: Promote consistency over creativity.** Unless required, GenAI-native systems should restrain creativity and prefer consistent, repeatable behavior. Applied to our protocol: the agent should match existing project conventions, not introduce novel patterns. The steering file enforces this by requiring the agent to read existing code before writing new code.
 
@@ -158,7 +158,7 @@ This empirical study analyzed 20,594 real developer-ChatGPT conversations from t
 
 2. **Why does the initial prompt lack structure?** Because developers default to the simplest interaction pattern — asking a question — without providing the context, constraints, and output format the AI needs to produce a precise answer.
 
-3. **Why do developers default to simple questions?** Because there is no systematic framework that maps task types to optimal prompt structures. The developer's intuition ("just ask") is the default, and it is suboptimal.
+3. **Why do developers default to simple questions?** Because there is no systematic framework that maps task types to optimal prompt structures. The developer's intuition ("ask directly") is the default, and it is suboptimal.
 
 4. **Why is there no systematic framework?** Because prior research focused on prompt engineering as a manual skill, not as an automatable engineering discipline. The insight that prompt structure can be codified into reusable patterns — and that these patterns have measurable, statistically significant differences in effectiveness (ANOVA F=27.04, p<10⁻³²) — is new empirical evidence.
 
@@ -195,7 +195,7 @@ The four papers converge on six principles that directly shape this protocol:
 | Principle | Esposito et al. | Vandeputte et al. | Shonan 222 | DiCuffa et al. | Protocol Phase |
 |---|---|---|---|---|---|
 | **Human oversight is non-negotiable** | 85% of studies use human interaction | Balance autonomy with safety and control | Human coordination remains essential | Developers guide AI through structured prompts, not delegation | Phase 1.b (acknowledge), Phase 4 (report) |
-| **Validation is the weakest link** | 93% lack formal validation | Verification at all levels, not just unit tests | Source code remains the deterministic artifact | Effectiveness measured by closed outcomes, not just generated code | Phase 3.b (pipeline testing), Phase 3.c (5W2H), DoD gate (§5.4) |
+| **Validation is the weakest link** | 93% lack formal validation | Verification at all levels, not only unit tests | Source code remains the deterministic artifact | Effectiveness measured by closed outcomes, not only generated code | Phase 3.b (pipeline testing), Phase 3.c (5W2H), DoD gate (§5.4) |
 | **Consistency over creativity** | Few-shot prompting dominates (structured input) | Promote consistency over creativity | Evolution, not revolution | Structured patterns outperform unstructured by statistically significant margins | Phase 1 (read before write), Steering (match conventions) |
 | **Fault-tolerance, not pass/fail** | Accuracy and hallucinations are top challenges | Utility-based sufficiency criteria | Greenfield doesn't generalize to brownfield | "Context and Instruction" reduces ambiguity that causes hallucination | Phase 3.a (adversarial challenge) |
 | **Systematic retrospectives** | Absence of evaluation frameworks is a key gap | Kaizen and Six Sigma for GenAI quality | Prompt-as-documentation for traceability | Template and Recipe patterns standardize output for review | Phase 3.c (5W2H), Phase 3.d (5 Whys) |
@@ -267,7 +267,7 @@ User reports symptom → Agent traces to code-level cause
 
 The agent optimizes for **passing the test suite**, not for **product correctness**. The test suite validates code structure. It does not validate product behavior. Every fix was locally correct but scoped to the reported symptom, not to the class of problem.
 
-**What the protocol must add:** The agent cannot intuit what the user will test next. But it can ask: "What other workloads, inputs, or scenarios would exercise the code I just changed?" This is **anticipatory verification** — testing not just what changed, but what the user will exercise next. Phase 3.a (adversarial multi-turn) partially addresses this with "What input would break this fix?" but it must be extended to include "What other workload would reveal a sibling bug?"
+**What the protocol must add:** The agent cannot intuit what the user will test next. But it can ask: "What other workloads, inputs, or scenarios would exercise the code I changed?" This is **anticipatory verification** — testing not only what changed, but what the user will exercise next. Phase 3.a (adversarial multi-turn) partially addresses this with "What input would break this fix?" but it must be extended to include "What other workload would reveal a sibling bug?"
 
 **Pattern 2: Architecture-Unaware Symptom Fixing (§9.2, Problem 1)**
 
@@ -285,17 +285,17 @@ The agent also treats knowledge artifacts as code. It writes a YAML mapping entr
 
 **What the protocol must add:**
 
-1. **Domain knowledge grounding in Phase 1.** During reconnaissance, the agent must identify not just the pipeline modules but also the **knowledge sources** — where does domain knowledge live? What is the single source of truth? If knowledge is scattered (§9.3: "10+ files in 5+ formats"), the agent must flag this as a risk before making changes.
+1. **Domain knowledge grounding in Phase 1.** During reconnaissance, the agent must identify not only the pipeline modules but also the **knowledge sources** — where does domain knowledge live? What is the single source of truth? If knowledge is scattered (§9.3: "10+ files in 5+ formats"), the agent must flag this as a risk before making changes.
 
-2. **Code vs knowledge artifact distinction in Phase 3.a.** The preToolUse hook must ask a different question for knowledge artifacts: not "have you read the downstream consumer?" but "have you validated this change against the domain source of truth? Is this mapping semantically correct, or just structurally valid?"
+2. **Code vs knowledge artifact distinction in Phase 3.a.** The preToolUse hook must ask a different question for knowledge artifacts: not "have you read the downstream consumer?" but "have you validated this change against the domain source of truth? Is this mapping semantically correct, or only structurally valid?"
 
-3. **Domain validation in Phase 3.b.** Pipeline testing for knowledge artifacts means: "Does this mapping produce the correct domain outcome?" — not just "Does the downstream module accept this input?" A mapping that routes `timeout_config` to REL 4 instead of REL 5 will pass every contract test but produce wrong findings.
+3. **Domain validation in Phase 3.b.** Pipeline testing for knowledge artifacts means: "Does this mapping produce the correct domain outcome?" — not only "Does the downstream module accept this input?" A mapping that routes `timeout_config` to REL 4 instead of REL 5 will pass every contract test but produce wrong findings.
 
 **Pattern 4: Stateless Pipeline Limitations (§9.4)**
 
 The pipeline can't reason (detecting presence ≠ evaluating quality), can't consolidate (file-level findings ≠ component-level insights), and can't learn (each run starts from scratch). These are architectural limitations, not code bugs.
 
-**What the protocol must add:** Phase 1 reconnaissance must identify which pipeline limitations are relevant to the current task. If the task involves severity calibration, the agent must know that the pipeline detects presence but not quality — and that any severity change requires domain-level reasoning, not just code-level changes. If the task involves finding consolidation, the agent must know that the pipeline groups by file, not by component — and that consolidation requires connecting to the code graph, not just merging findings.
+**What the protocol must add:** Phase 1 reconnaissance must identify which pipeline limitations are relevant to the current task. If the task involves severity calibration, the agent must know that the pipeline detects presence but not quality — and that any severity change requires domain-level reasoning, not only code-level changes. If the task involves finding consolidation, the agent must know that the pipeline groups by file, not by component — and that consolidation requires connecting to the code graph, not only merging findings.
 
 ### How This Changes the Protocol
 
@@ -303,7 +303,7 @@ The four patterns require three additions to the protocol:
 
 **Addition 1: Knowledge Architecture Awareness (Phase 1)**
 
-During reconnaissance, the agent must map not just the computational pipeline but also the **knowledge architecture**:
+During reconnaissance, the agent must map not only the computational pipeline but also the **knowledge architecture**:
 - Where does domain knowledge live? (single source of truth, or scattered?)
 - Which artifacts are code (functions, classes, modules) and which are knowledge (mappings, templates, configs, thresholds)?
 - What is the domain validation strategy for knowledge artifacts? (Who or what confirms semantic correctness?)
@@ -461,13 +461,13 @@ When multiple turns are needed within this step, each turn must reference the in
 **3.a Adversarial multi-turn.** After writing a solution, the agent challenges it:
 - What assumption does this fix rely on?
 - What input would break this fix?
-- Does this fix address the bug **class** or just this **instance**?
+- Does this fix address the bug **class** or only this **instance**?
 - Are there parallel code paths with the same vulnerability?
 - What happens to downstream consumers when this change is applied?
 - **What other workload or scenario would reveal a sibling bug?** (anticipatory verification — §3.1, Pattern 1)
 
 For **knowledge artifacts** (mappings, templates, configs), add domain-specific challenges (§3.1, Addition 2):
-- Is this change semantically correct within the domain, or just structurally valid?
+- Is this change semantically correct within the domain, or only structurally valid?
 - Have I validated against the domain source of truth (framework docs, corpus, official specs)?
 - Would a domain expert agree with this mapping/template/threshold, or did I infer it from pattern matching?
 
@@ -479,7 +479,7 @@ For **knowledge artifacts** (mappings, templates, configs), add domain-specific 
 
 This is the Reflective Processor pattern applied to development: disambiguate, verify, and assess before committing. The agent acts as its own adversary, attempting to find the failure mode before the user does.
 
-**3.b Pipeline testing (data journey).** Test not just the changed node, but the data journey through the pipeline:
+**3.b Pipeline testing (data journey).** Test not only the changed node, but the data journey through the pipeline:
 - **CONTRACT**: Does the output match the consumer's expected schema?
 - **UPSTREAM**: Does the change handle all variations the producer emits?
 - **DOWNSTREAM**: Does the next module produce correct output with this change?
@@ -488,7 +488,7 @@ This is the Reflective Processor pattern applied to development: disambiguate, v
 For **knowledge artifacts**, apply the dual verification strategy (§3.1, Addition 2):
 - **DOMAIN**: Does this mapping/template/config produce the correct domain outcome? A mapping that routes evidence to the wrong framework question will pass every contract test but produce wrong findings.
 - **SEMANTIC CROSS-CHECK**: Can the change be validated against the domain source of truth? If the project has a corpus, official docs, or framework specification, check the change against it.
-- **COVERAGE**: Does the change affect all instances of the pattern, or just the reported one? (e.g., fixing one fact type's WAF mapping without checking the other 52)
+- **COVERAGE**: Does the change affect all instances of the pattern, or only the reported one? (e.g., fixing one fact type's WAF mapping without checking the other 52)
 
 This implements Vandeputte et al.'s principle of "verification and mitigation at all levels." The agent tests at the edge (module boundary) for code artifacts, and at the domain boundary (semantic correctness) for knowledge artifacts.
 
@@ -508,8 +508,8 @@ This implements Vandeputte et al.'s Systematic Quality Verification principle. T
 2. Ask Why 5 times to reach the root cause
 3. Plan the fix at the root cause level
 4. Design the fix considering upstream/downstream impact
-5. Test the fix at the pipeline level, not just the node level
-6. Apply the fix in a future-proof manner — does this prevent the entire **class** of bug, not just this instance?
+5. Test the fix at the pipeline level, not only the node level
+6. Apply the fix in a future-proof manner — does this prevent the entire **class** of bug, not only this instance?
 
 This implements the post-mortem's core lesson: fix the class, not the instance. The 5 Whys prevents the cascading fix pattern where each symptom-level fix creates the next bug.
 
@@ -524,7 +524,7 @@ The agent reports to the user:
 - **Residual risks**: any known gaps, edge cases, or follow-up items
 - **5W2H summary**: the structured reasoning for the change
 
-This report serves as the task's documentation. It captures not just what changed, but why it changed, how it was validated, and what remains unverified.
+This report serves as the task's documentation. It captures not only what changed, but why it changed, how it was validated, and what remains unverified.
 
 ---
 
@@ -589,7 +589,7 @@ The preToolUse hook fires before every write operation. It forces the agent to a
 3. Have you searched for the same pattern in parallel code paths?
 4. Is this change addressing the root cause or the reported symptom?
 5. What input or scenario would break this change?
-6. **For knowledge artifacts**: Have you validated this change against the domain source of truth? Is this semantically correct, or just structurally valid? (§3.1, Addition 2)
+6. **For knowledge artifacts**: Have you validated this change against the domain source of truth? Is this semantically correct, or only structurally valid? (§3.1, Addition 2)
 7. **Architectural escalation**: Am I patching the same area again? If so, is the architecture wrong? (§3.1, Addition 3)
 
 **Why preToolUse on write:** This is the moment of highest leverage — the agent is about to change the system. If the agent hasn't read the downstream consumer, it will discover the impact after the change, not before. The hook forces discovery before action.
@@ -614,7 +614,7 @@ The postTaskExecution hook fires after completing a spec task. It enforces pipel
 **Phase 3.d — 5 Whys (if issues were found):**
 - For each issue encountered, apply 5 Whys to the root cause.
 - Confirm the fix addresses the root cause, not the symptom.
-- Confirm the fix prevents the bug class, not just this instance.
+- Confirm the fix prevents the bug class, not only this instance.
 
 **Phase 4 — Completion Report:**
 - What was delivered, what was validated, what was NOT validated, residual risks.
@@ -721,7 +721,7 @@ The DoD hook fires after task completion, before the pipeline validation hook (�
   },
   "then": {
     "type": "askAgent",
-    "prompt": "DEFINITION OF DONE — POST-TASK GATE\n\nTask marked complete. Before reporting, validate the delivered work against the project's quality reference artifacts:\n\n1. COMPLIANCE MATRIX: For each standard identified in the DoR gate:\n\n| Standard | Criteria | Met? | Evidence | Gap? |\n|----------|----------|------|----------|------|\n| (fill for each applicable standard) | | Yes/No/Partial | What was done | What remains |\n\n2. CROSS-STANDARD IMPACT: Does compliance with one standard conflict with another? If trade-offs exist, are they documented and justified?\n\n3. GOVERNANCE CHECK: Were any governed artifacts modified? If so, was the governance process followed?\n\n4. VALIDATION vs VERIFICATION: Distinguish between:\n   - VERIFICATION: 'Did I build it right?' (tests pass, contracts hold)\n   - VALIDATION: 'Did I build the right thing?' (output meets the standard's intent, not just its structure)\n\n5. RESIDUAL GAPS: What standards are NOT fully met? For each gap:\n   - Is it a known limitation of this task's scope?\n   - Does it require a follow-up task?\n   - Does it represent a risk to the project?\n\nSummarize: PASS (all applicable standards met), PARTIAL (gaps documented with justification), or BLOCK (governance violation or unresolved conflict)."
+    "prompt": "DEFINITION OF DONE — POST-TASK GATE\n\nTask marked complete. Before reporting, validate the delivered work against the project's quality reference artifacts:\n\n1. COMPLIANCE MATRIX: For each standard identified in the DoR gate:\n\n| Standard | Criteria | Met? | Evidence | Gap? |\n|----------|----------|------|----------|------|\n| (fill for each applicable standard) | | Yes/No/Partial | What was done | What remains |\n\n2. CROSS-STANDARD IMPACT: Does compliance with one standard conflict with another? If trade-offs exist, are they documented and justified?\n\n3. GOVERNANCE CHECK: Were any governed artifacts modified? If so, was the governance process followed?\n\n4. VALIDATION vs VERIFICATION: Distinguish between:\n   - VERIFICATION: 'Did I build it right?' (tests pass, contracts hold)\n   - VALIDATION: 'Did I build the right thing?' (output meets the standard's intent, not only its structure)\n\n5. RESIDUAL GAPS: What standards are NOT fully met? For each gap:\n   - Is it a known limitation of this task's scope?\n   - Does it require a follow-up task?\n   - Does it represent a risk to the project?\n\nSummarize: PASS (all applicable standards met), PARTIAL (gaps documented with justification), or BLOCK (governance violation or unresolved conflict)."
   }
 }
 ```
@@ -854,7 +854,7 @@ Diagram generation is governed by two steering files that work at different leve
 
 The first steering answers **what** a good diagram looks like. The second answers **how** to make Graphviz produce one reliably.
 
-Both are global — they apply to any workspace, not just the originating project. Any project that generates architecture diagrams benefits from these rules.
+Both are global — they apply to any workspace, not only the originating project. Any project that generates architecture diagrams benefits from these rules.
 
 #### 5.5.3 The Diagram Generation Script Pattern
 
@@ -952,7 +952,7 @@ Not every task requires the full protocol. The engineering level scales with the
 | **L1 — Routine** | Typo fix, comment update, doc change. No pipeline impact. | Phase 2 + Phase 4 (minimal) | Steering only. Hooks self-assess as not applicable. |
 | **L2 — Targeted** | Single-module change with known downstream consumers. Bug fix in one function. | Phase 1.b + Phase 2 + Phase 3 + Phase 4 | Steering + preToolUse hook. postTaskExecution optional. |
 | **L3 — Cross-module** | Change affects multiple modules in the pipeline. New feature touching 2+ stages. | Full Phase 1 + Phase 2 + Full Phase 3 + Phase 4 | All three mechanisms active. |
-| **L4 — Architectural** | New pipeline stage, data model change, module boundary redesign. | Full protocol with extended Phase 1 (map all affected modules) and extended Phase 3.a (adversarial review of architecture, not just code). | All three mechanisms + human review gate before Phase 3. |
+| **L4 — Architectural** | New pipeline stage, data model change, module boundary redesign. | Full protocol with extended Phase 1 (map all affected modules) and extended Phase 3.a (adversarial review of architecture, not only code). | All three mechanisms + human review gate before Phase 3. |
 
 The agent should self-classify the engineering level based on the task description and the Phase 1 reconnaissance. If uncertain, default to L3.
 
@@ -1369,7 +1369,7 @@ The bare response exhibits the exact failure patterns documented in §3 and §3.
 The FDE response, by contrast, follows the full protocol recipe and produces a structured output that addresses all 18 quality criteria. The key differentiators are:
 
 - **Phase 2 reformulation**: The FDE response transforms the bare question into a Context + Instruction + Constraints contract before writing any code
-- **Root cause analysis**: The FDE response applies 5 Whys and discovers the architectural root cause (incomplete BP addressability), not just the surface symptom (flat map)
+- **Root cause analysis**: The FDE response applies 5 Whys and discovers the architectural root cause (incomplete BP addressability), not only the surface symptom (flat map)
 - **Domain validation**: The FDE response validates severity assignments against 6 WAF corpus files
 - **Structured reporting**: The FDE response explicitly states what was validated, what was NOT validated, and what residual risks remain
 
