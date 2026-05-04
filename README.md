@@ -7,13 +7,13 @@
 
 [![Tests](https://img.shields.io/badge/tests-54%20passed-brightgreen)]()
 [![Hooks](https://img.shields.io/badge/hooks-13%20(4%20V2%20%2B%209%20V3)-blue)]()
-[![Factory Level](https://img.shields.io/badge/level-L4%20Dark%20Factory-purple)]()
+[![Autonomy Level](https://img.shields.io/badge/level-L4%20Autonomous%20Factory-purple)]()
 
 ---
 
 ## What Is This?
 
-This repo is a **factory template** for enterprise-grade AI-assisted software development using [Amazon Kiro](https://kiro.dev). It implements the **Autonomous Code Factory pattern** (Level 4 autonomy) where AI agents handle the full development loop — writing, testing, reviewing, and packaging code — while the human engineer operates as **Director of Architecture**, writing specs and approving outcomes.
+This repo is a **factory template** for enterprise-grade AI-assisted software development using [Amazon Kiro](https://kiro.dev). It implements the **Autonomous Code Factory pattern** (Level 4 autonomy) where AI agents handle the full development loop — writing, testing, reviewing, and packaging code — while the human engineer operates as **Factory Operator**, writing specs and approving outcomes.
 
 The pattern is built on **Forward Deployed Engineers (FDEs)** — AI agents deployed into a project's specific context: its pipeline architecture, its knowledge artifacts, its quality standards, and its governance boundaries. An FDE is not a general-purpose coding assistant. It is an engineering partner that knows your system.
 

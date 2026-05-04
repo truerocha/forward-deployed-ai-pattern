@@ -2,7 +2,7 @@
 
 > Status: **design document — pending implementation**
 > Date: 2026-05-03
-> Role: Staff Engineer as **Director of Architecture** managing a squad of AI agents
+> Role: Staff Engineer as **Factory Operator** managing a squad of AI agents
 > Pattern: Autonomous Code Factory (Level 4 — AI-generated with automated review, human approves outcomes)
 > Scope: End-to-end — from ALM intake through agent execution to ship-ready code
 > Stack: GitHub Issues + Asana | GitHub Actions + GitLab CI Ultimate (mirror) | Playwright + Docker + pytest + BDD
