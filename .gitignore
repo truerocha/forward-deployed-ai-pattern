@@ -18,3 +18,6 @@ infra/terraform/terraform.tfstate
 infra/terraform/terraform.tfstate.backup
 infra/terraform/tfplan
 infra/terraform/factory.tfvars
+
+# Reference PDFs (kept locally, not in repo)
+docs/example/*.pdf
