@@ -8,6 +8,47 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased] — 2026-05-04
 
+### Added — Enterprise-Grade Autonomy and Observability (ADR-013)
+- `infra/docker/agents/autonomy.py` — Autonomy Level computation (L1-L5) with pipeline gate adaptation. Computes level from data contract (type + level), supports human override, resolves which gates and checkpoints to apply per task.
+- `infra/docker/agents/failure_modes.py` — Failure Mode Taxonomy (FM-01 through FM-99). Classifies WHY tasks do not complete using heuristic rules on execution context signals. Integrates with DORA metrics as dimensions.
+- `infra/docker/agents/scope_boundaries.py` — Scope Boundary Enforcement. Rejects tasks outside factory capability (no acceptance criteria, no tech_stack, forbidden actions like production deploy or PR merge). Computes confidence level (high/medium/low) from available signals.
+- `docs/design/scope-boundaries.md` — Formal scope boundaries document defining in-scope capabilities, out-of-scope items, performance targets per autonomy level, and confidence scoring.
+- `tests/test_autonomy_level.py` — 10 BDD scenarios for autonomy computation and pipeline adaptation
+- `tests/test_failure_mode_taxonomy.py` — 8 BDD scenarios for failure classification
+- `tests/test_domain_segmented_metrics.py` — 5 BDD scenarios for tech_stack segmentation
+- `tests/test_scope_boundaries.py` — 8 BDD scenarios for scope enforcement
+- ADR-013: Enterprise-Grade Autonomy, Failure Classification, and Scope Boundaries
+
+### Added — Constraint Extractor and Agent Builder (ADR-010)
+- `infra/docker/agents/constraint_extractor.py` — Two-pass constraint extraction (rule-based regex + opt-in LLM). Extracts version pins, latency thresholds, auth mandates, encryption requirements, dependency exclusions. DoR Gate validates extracted constraints against tech_stack.
+- `infra/docker/agents/agent_builder.py` — Just-in-time agent provisioning from data contract. Queries Prompt Registry by tech_stack context tags, injects extracted constraints into agent prompts, selects tool set by task type.
+- `infra/docker/agents/project_isolation.py` — SaaS-kernel project isolation. Each task gets isolated S3 prefix, workspace directory, git branch, and correlation ID. Zero cross-project interference.
+- `infra/docker/agents/sdlc_gates.py` — Inner loop (lint → typecheck → unit-test → build) and outer loop (DoR → Constraint Extraction → Adversarial → Ship-Readiness) gate enforcement with retry logic and timing.
+- `infra/docker/agents/pipeline_safety.py` — PR Diff Review Gate (secret scanning, debug code detection, size checks) + Automatic Rollback (checkpoint + git reset to known-good state on feature branches).
+- `infra/docker/agents/dora_metrics.py` — DORA Metrics Collector with 4 core metrics (Lead Time, Deployment Frequency, Change Failure Rate, MTTR) + 5 factory metrics. Domain segmentation by tech_stack. Factory Health Report with DORA level classification (Elite/High/Medium/Low).
+
+### Added — Over-Engineering Mitigations (ADR-012)
+- LLM constraint extraction is opt-in (default off). Enable via env var, constructor flag, or per-task field.
+- Fast path for bugfix/documentation tasks with empty constraints — skips extraction entirely.
+- ADR-011: Multi-Cloud Adapter deferred until customer demand. `target_environment` preserved in data contract.
+- ADR-012: Over-Engineering Mitigations and Gap Closures (6 decisions with adversarial analysis)
+
+### Changed — Router (v1 → v2)
+- `infra/docker/agents/router.py` — Now extracts the full canonical data contract from platform-specific event payloads (GitHub issue form sections, GitLab scoped labels, Asana custom fields). `RoutingDecision` carries `data_contract` dict.
+
+### Changed — Orchestrator (v1 → v2)
+- `infra/docker/agents/orchestrator.py` — Full pipeline: Router → Constraint Extraction → DoR Gate → Agent Builder → Execute. Fast path for simple tasks. Writes extraction reports to S3 for audit trail.
+
+### Changed — Entrypoint
+- `infra/docker/agent_entrypoint.py` — Wires Constraint Extractor (with optional LLM) + Agent Builder into the Orchestrator.
+
+### Changed — DynamoDB (Terraform)
+- `infra/terraform/dynamodb.tf` — Added `fde-dev-dora-metrics` table with GSIs for task_id and metric_type queries.
+- `infra/terraform/main.tf` — Added DORA_METRICS_TABLE env var to ECS task definition, added DynamoDB access to IAM policy.
+
+### Changed — Data Contract Design
+- `docs/design/data-contract-task-input.md` — Updated Agent Consumption Matrix with new components (Constraint Extractor, DoR Gate, Agent Builder). Added Pipeline Flow diagram showing the full InProgress event sequence.
+
 ### Added — Multi-Platform ALM Integration (ADR-008)
 - Portable task templates for GitHub Projects, Asana, and GitLab Ultimate (`docs/templates/task-template-*.md`)
 - Canonical task schema (`docs/templates/canonical-task-schema.yaml`) — platform-agnostic format all adapters map to

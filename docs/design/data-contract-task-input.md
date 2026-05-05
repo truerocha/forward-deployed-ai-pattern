@@ -123,19 +123,61 @@ IF priority is P0: task is placed at front of queue
 
 ## 5. Agent Consumption Matrix
 
-| Agent | Reads | Writes |
-|-------|-------|--------|
-| **Router** | source, type | task_id |
-| **Reconnaissance** | title, description, tech_stack, related_docs, constraints | estimated_complexity, spec_path |
-| **Engineering** | All required + spec_path, constraints, acceptance_criteria | result, branch name |
+| Component | Reads | Writes |
+|-----------|-------|--------|
+| **Router** | source, type, full issue body | data_contract (all fields) |
+| **Constraint Extractor** | constraints, related_docs, tech_stack | extracted constraints (CTR-xxx objects) |
+| **DoR Gate** | extracted constraints, tech_stack | pass/fail + failures + warnings |
+| **Agent Builder** | tech_stack, type, extracted constraints | specialized AgentDefinition (prompt + tools) |
+| **Prompt Registry** | tech_stack (as context_tags) | prompt_version, prompt_hash |
+| **Reconnaissance** | title, description, tech_stack, related_docs, injected constraints | estimated_complexity, spec_path |
+| **Engineering** | All required + spec_path, injected constraints, acceptance_criteria | result, branch name |
 | **Reporting** | task_id, source, result, acceptance_criteria | completion_report_s3, ALM update |
 | **Task Queue** | task_id, status, depends_on, priority | status transitions |
-| **Prompt Registry** | tech_stack (context-aware selection) | prompt_version, prompt_hash |
 | **Lifecycle Manager** | agent_instance_id, task_id | status transitions, execution_time_ms |
 
-## 6. Open Questions
+## 6. Pipeline Flow (InProgress Event)
 
-1. Should the data contract be stored in DynamoDB (with the task) or as a separate S3 object?
+```
+EventBridge Event (InProgress)
+  │
+  ▼
+Router.route_event()
+  ├── Extracts data_contract from platform-specific payload
+  ├── GitHub: parses issue form sections (### headers, checkboxes)
+  ├── GitLab: reads scoped labels (type::, priority::, stack::)
+  └── Asana: reads custom fields + notes sections
+  │
+  ▼
+ConstraintExtractor.extract_and_validate(data_contract)
+  ├── Pass 1: Rule-based extraction (regex, no LLM cost)
+  │   └── Version pins, latency thresholds, auth mandates, exclusions
+  ├── Pass 2: LLM-based extraction (Bedrock, catches nuanced constraints)
+  ├── Merge + deduplicate (rule-based takes precedence)
+  └── DoR Gate: validate constraints against tech_stack
+  │
+  ▼
+DoR Gate Result
+  ├── PASS → continue to Agent Builder
+  └── FAIL → pipeline blocked, error reported to ALM
+  │
+  ▼
+AgentBuilder.build_pipeline_agents(data_contract, extraction_result)
+  ├── Resolves prompts from Prompt Registry (tech_stack as context_tags)
+  ├── Falls back to base prompts if no Registry match
+  ├── Injects extracted constraints block into agent prompts
+  ├── Selects tool set based on task type
+  └── Registers transient agent definitions (scoped to task_id)
+  │
+  ▼
+Orchestrator._execute_pipeline([recon-TASK-xxx, eng-TASK-xxx, report-TASK-xxx])
+  ├── Each stage passes output as context to the next
+  └── Results written to S3, ALM updated
+```
+
+## 7. Open Questions
+
+1. ~~Should the data contract be stored in DynamoDB (with the task) or as a separate S3 object?~~ **Resolved**: Stored in the RoutingDecision, persisted to S3 as part of the extraction report.
 2. How do we handle tasks that span multiple repos?
 3. Should the agent request clarification by commenting on the issue, or block and wait?
 4. What is the maximum task size before decomposition into subtasks?

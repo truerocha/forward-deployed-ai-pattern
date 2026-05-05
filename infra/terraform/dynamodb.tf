@@ -80,3 +80,49 @@ resource "aws_dynamodb_table" "agent_lifecycle" {
 
   tags = { Component = "agent-lifecycle" }
 }
+
+# ─── DORA Metrics ────────────────────────────────────────────────
+# Append-only table for DORA + factory metrics.
+# GSIs enable querying by task_id or metric_type for dashboards.
+
+resource "aws_dynamodb_table" "dora_metrics" {
+  name         = "${local.name_prefix}-dora-metrics"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "metric_id"
+
+  attribute {
+    name = "metric_id"
+    type = "S"
+  }
+
+  attribute {
+    name = "task_id"
+    type = "S"
+  }
+
+  attribute {
+    name = "metric_type"
+    type = "S"
+  }
+
+  attribute {
+    name = "recorded_at"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "task-index"
+    hash_key        = "task_id"
+    range_key       = "recorded_at"
+    projection_type = "ALL"
+  }
+
+  global_secondary_index {
+    name            = "type-index"
+    hash_key        = "metric_type"
+    range_key       = "recorded_at"
+    projection_type = "ALL"
+  }
+
+  tags = { Component = "dora-metrics" }
+}

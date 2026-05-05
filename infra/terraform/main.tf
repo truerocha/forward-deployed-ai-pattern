@@ -297,6 +297,8 @@ resource "aws_iam_role_policy" "ecs_task_dynamodb" {
         "${aws_dynamodb_table.task_queue.arn}/index/*",
         aws_dynamodb_table.agent_lifecycle.arn,
         "${aws_dynamodb_table.agent_lifecycle.arn}/index/*",
+        aws_dynamodb_table.dora_metrics.arn,
+        "${aws_dynamodb_table.dora_metrics.arn}/index/*",
       ]
     }]
   })
@@ -351,7 +353,8 @@ resource "aws_ecs_task_definition" "strands_agent" {
         { name = "ENVIRONMENT", value = var.environment },
         { name = "PROMPT_REGISTRY_TABLE", value = aws_dynamodb_table.prompt_registry.name },
         { name = "TASK_QUEUE_TABLE", value = aws_dynamodb_table.task_queue.name },
-        { name = "AGENT_LIFECYCLE_TABLE", value = aws_dynamodb_table.agent_lifecycle.name }
+        { name = "AGENT_LIFECYCLE_TABLE", value = aws_dynamodb_table.agent_lifecycle.name },
+        { name = "DORA_METRICS_TABLE", value = aws_dynamodb_table.dora_metrics.name }
       ]
 
       secrets = [

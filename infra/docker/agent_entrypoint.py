@@ -1,11 +1,14 @@
 """
 Forward Deployed Engineer — Strands Agent Entrypoint for ECS Fargate.
 
-Wires together: Registry + Router + Orchestrator.
+Wires together: Registry + Router + Constraint Extractor + Agent Builder + Orchestrator.
+
+Pipeline on every InProgress event:
+  Router → Constraint Extractor → DoR Gate → Agent Builder → Execute
 
 Modes:
-1. EVENTBRIDGE_EVENT env var → parse event, route, execute
-2. TASK_SPEC env var → direct spec execution
+1. EVENTBRIDGE_EVENT env var → parse event, route, extract constraints, build agents, execute
+2. TASK_SPEC env var → direct spec execution (still runs constraint extraction)
 3. Neither → log instructions and exit
 """
 
@@ -17,6 +20,8 @@ import sys
 import boto3
 from botocore.exceptions import ClientError
 
+from agents.agent_builder import AgentBuilder
+from agents.constraint_extractor import ConstraintExtractor
 from agents.registry import AgentRegistry, AgentDefinition
 from agents.router import AgentRouter
 from agents.orchestrator import Orchestrator
@@ -35,7 +40,40 @@ FACTORY_BUCKET = os.environ.get("FACTORY_BUCKET", "")
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "dev")
 
 
+def _build_llm_invoke_fn():
+    """Build an LLM invocation function for the Constraint Extractor.
+
+    Uses Bedrock directly (not a Strands agent) for structured extraction.
+    Returns None if Bedrock is not available, falling back to rule-based only.
+    """
+    try:
+        bedrock = boto3.client("bedrock-runtime", region_name=AWS_REGION)
+
+        def invoke(prompt: str) -> str:
+            response = bedrock.invoke_model(
+                modelId=BEDROCK_MODEL_ID,
+                body=json.dumps({
+                    "anthropic_version": "bedrock-2023-05-31",
+                    "max_tokens": 4096,
+                    "messages": [{"role": "user", "content": prompt}],
+                }),
+            )
+            body = json.loads(response["body"].read())
+            return body["content"][0]["text"]
+
+        logger.info("LLM invoke function ready (model: %s)", BEDROCK_MODEL_ID)
+        return invoke
+    except Exception as e:
+        logger.warning("Bedrock not available for constraint extraction, using rule-based only: %s", e)
+        return None
+
+
 def build_registry() -> AgentRegistry:
+    """Build the agent registry with base agent definitions.
+
+    These base agents are used as fallbacks when the Agent Builder
+    doesn't find a specialized prompt in the Prompt Registry.
+    """
     registry = AgentRegistry(default_model_id=BEDROCK_MODEL_ID, aws_region=AWS_REGION)
     registry.register(AgentDefinition(
         name="reconnaissance", system_prompt=RECONNAISSANCE_PROMPT,
@@ -76,11 +114,32 @@ def main():
             logger.error("Environment issue: %s", issue)
         sys.exit(1)
 
+    # Build all components
     registry = build_registry()
     router = AgentRouter()
-    orchestrator = Orchestrator(registry=registry, router=router, factory_bucket=FACTORY_BUCKET)
 
-    logger.info("Application ready: %d agents [%s]", len(registry.list_agents()), ", ".join(registry.list_agents()))
+    # Constraint Extractor with optional LLM support
+    llm_fn = _build_llm_invoke_fn()
+    constraint_extractor = ConstraintExtractor(llm_invoke_fn=llm_fn)
+
+    # Agent Builder reads from Prompt Registry + data contract
+    agent_builder = AgentBuilder(registry)
+
+    # Orchestrator wires everything together
+    orchestrator = Orchestrator(
+        registry=registry,
+        router=router,
+        factory_bucket=FACTORY_BUCKET,
+        constraint_extractor=constraint_extractor,
+        agent_builder=agent_builder,
+    )
+
+    logger.info(
+        "Application ready: %d base agents [%s], constraint extractor=%s",
+        len(registry.list_agents()),
+        ", ".join(registry.list_agents()),
+        "LLM+rules" if llm_fn else "rules-only",
+    )
 
     eventbridge_event = os.environ.get("EVENTBRIDGE_EVENT", "")
     task_spec_path = os.environ.get("TASK_SPEC", "")

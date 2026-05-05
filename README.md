@@ -44,10 +44,19 @@ Improvement: +67 percentage points
 
 ## Architecture
 
-![Autonomous Code Factory Architecture](docs/architecture/autonomous-code-factory.png)
+![Autonomous Code Factory — Hero Overview](docs/architecture/planes/00-hero-overview.png)
 
-> Spine: Staff Engineer → ALM → Spec → Agent Execution → CI/CD → Ship-Readiness → Delivery → Staff Engineer approves outcome.
-> Branches: Cross-session learning (notes) and meta-agent (prompt refinement).
+The factory is organized into **5 modular planes**, each with its own diagram and design narrative:
+
+| # | Plane | Responsibility | Diagram |
+|---|-------|---------------|---------|
+| 1 | [Version Source Management](docs/architecture/planes/01-vsm-plane.md) | Git, ALM platforms, project isolation, PR delivery | ![VSM](docs/architecture/planes/01-vsm-plane.png) |
+| 2 | [FDE (Forward Deployed Engineer)](docs/architecture/planes/02-fde-plane.md) | Autonomy resolution, agent builder, pipeline execution | ![FDE](docs/architecture/planes/02-fde-plane.png) |
+| 3 | [Context](docs/architecture/planes/03-context-plane.md) | Constraint extraction, prompt registry, scope boundaries, learning | ![Context](docs/architecture/planes/03-context-plane.png) |
+| 4 | [Data](docs/architecture/planes/04-data-plane.md) | Router, task queue, artifact storage, EventBridge | ![Data](docs/architecture/planes/04-data-plane.png) |
+| 5 | [Control](docs/architecture/planes/05-control-plane.md) | SDLC gates, DORA metrics, pipeline safety, failure modes | ![Control](docs/architecture/planes/05-control-plane.png) |
+
+> Full single-diagram view: [docs/architecture/autonomous-code-factory.png](docs/architecture/autonomous-code-factory.png)
 
 **Cloud orchestration (optional):** When deployed to AWS, ALM webhooks flow through API Gateway → EventBridge → ECS Fargate, where a Strands agent container runs the FDE protocol headless using Bedrock for inference. Results are written to S3 and ALM status is updated automatically. See [Cloud Orchestration Flow](docs/flows/13-cloud-orchestration.md).
 
