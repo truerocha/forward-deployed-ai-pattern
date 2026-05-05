@@ -175,7 +175,36 @@ validate_gitlab() {
     GL_VERSION=$(echo "$LICENSE_INFO" | python3 -c "import sys,json; print(json.load(sys.stdin).get('version','unknown'))" 2>/dev/null || echo "unknown")
     log_ok "GitLab version: $GL_VERSION"
 
-    # 5. Check board access (requires project)
+    # 4. Check token scopes (PAT self-introspection)
+    SCOPE_JSON=$(curl -s \
+        -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+        "$GITLAB_API/api/v4/personal_access_tokens/self" 2>/dev/null || echo "{}")
+
+    GL_SCOPES=$(echo "$SCOPE_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(','.join(d.get('scopes',[])))" 2>/dev/null || echo "")
+    GL_EXPIRES=$(echo "$SCOPE_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('expires_at','never'))" 2>/dev/null || echo "unknown")
+
+    if [ -n "$GL_SCOPES" ]; then
+        log_ok "Token scopes: $GL_SCOPES (expires: $GL_EXPIRES)"
+        if echo "$GL_SCOPES" | grep -q "api"; then
+            log_ok "Has 'api' scope (full API access for issues, MRs, boards)"
+        else
+            log_fail "Missing 'api' scope — needed for issue and MR operations"
+        fi
+    else
+        log_skip "Could not read token scopes (token type may not support self-introspection)"
+    fi
+
+    # 5. Check if token is expired
+    if [ "$GL_EXPIRES" != "never" ] && [ "$GL_EXPIRES" != "null" ] && [ "$GL_EXPIRES" != "unknown" ]; then
+        TODAY=$(date '+%Y-%m-%d')
+        if [[ "$GL_EXPIRES" < "$TODAY" ]]; then
+            log_fail "Token expired on $GL_EXPIRES — generate a new one"
+        else
+            log_ok "Token valid until $GL_EXPIRES"
+        fi
+    fi
+
+    # 6. Check board access (requires project)
     if [ -n "${GITLAB_PROJECT_ID:-}" ]; then
         BOARD_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
             -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
@@ -189,7 +218,7 @@ validate_gitlab() {
         log_skip "GITLAB_PROJECT_ID not set — cannot verify board access"
     fi
 
-    # 6. Check MCP server availability
+    # 7. Check MCP server availability
     if command -v npx &>/dev/null; then
         log_ok "npx available (needed for GitLab MCP server)"
     else
