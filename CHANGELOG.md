@@ -8,6 +8,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased] — 2026-05-04
 
+### Added — Authentication and Data Journey Validation
+- `docs/guides/auth-setup.md` — Step-by-step token creation guide for GitHub (PAT classic, scopes `repo` + `project`), GitLab (PAT, scope `api`, expiry check), and Asana (PAT, inherited permissions). Includes progressive configuration, token rotation, cloud deployment (Secrets Manager), and troubleshooting.
+- `examples/web-app/test_data_journey.py` — 13 integration tests validating the full data contract flow per platform (GitHub, GitLab, Asana). Each test covers: Router extraction → Constraint detection → Scope check → Autonomy computation → Routing decision.
+- `scripts/validate-alm-api.sh` — Extended GitLab validation: PAT self-introspection (`GET /personal_access_tokens/self`), scope verification (`api` required), and token expiry check.
+
 ### Added — Enterprise-Grade Autonomy and Observability (ADR-013)
 - `infra/docker/agents/autonomy.py` — Autonomy Level computation (L1-L5) with pipeline gate adaptation. Computes level from data contract (type + level), supports human override, resolves which gates and checkpoints to apply per task.
 - `infra/docker/agents/failure_modes.py` — Failure Mode Taxonomy (FM-01 through FM-99). Classifies WHY tasks do not complete using heuristic rules on execution context signals. Integrates with DORA metrics as dimensions.
