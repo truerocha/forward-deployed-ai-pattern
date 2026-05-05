@@ -1,13 +1,13 @@
 {
   "enabled": false,
   "name": "FDE Enterprise Release Manager",
-  "description": "Human-triggered. Performs semantic commit, pushes to feature branch, opens MR/PR via MCP. NEVER merges. Enable for L3+ tasks.",
-  "version": "1.0.0",
+  "description": "Human-triggered. Performs semantic commit, pushes to feature branch, opens MR/PR via MCP on the appropriate platform (GitHub/GitLab). Updates ALM status on all linked platforms. NEVER merges. Enable for L3+ tasks.",
+  "version": "2.0.0",
   "when": {
     "type": "userTriggered"
   },
   "then": {
     "type": "askAgent",
-    "prompt": "FDE RELEASE (Release Manager)\n\n1. PRE-FLIGHT: Verify uncommitted changes exist. Verify NOT on main (create feature branch if needed). Check CI green via MCP if available.\n2. COMMIT: Determine type (feat/fix/refactor/docs/test/chore) and scope from spec. Write semantic commit: <type>(<scope>): <desc>. Body: what and why. Footer: Closes #issue, Spec: path.\n3. PUSH: git push -u origin <branch>.\n4. MR: Create via GitHub/GitLab MCP. Title = commit first line. Body = summary + spec ref + validation results. Assign human as reviewer.\n5. ALM: Update issue to 'in-review', link MR.\n\nNEVER merge. Human approves.\n\nOutput: [RELEASED: PR #X | BLOCKED: reason]"
+    "prompt": "FDE RELEASE (Release Manager)\n\n## Step 1: Pre-Flight\n1. Verify uncommitted changes exist\n2. Verify NOT on main/master (create feature branch if needed)\n3. Read spec frontmatter for 'source:' and 'issue:' fields\n4. Check CI green via MCP if available\n\n## Step 2: Semantic Commit\n1. Determine type (feat/fix/refactor/docs/test/chore) and scope from spec\n2. Write semantic commit: <type>(<scope>): <desc>\n3. Body: what and why\n4. Footer: Closes #{issue}, Spec: {spec_path}, Source: {platform}\n\n## Step 3: Push\ngit push -u origin <branch>\n\n## Step 4: Open MR/PR (Platform-Aware)\n\nBased on where the code repo lives:\n- GitHub repo → Create PR via GitHub MCP\n  - Title = commit first line\n  - Body = summary + spec ref + validation results + linked issues\n  - Assign human as reviewer\n- GitLab repo → Create MR via GitLab MCP\n  - Title = commit first line\n  - Description = summary + spec ref + validation results\n  - Assign human as reviewer\n  - Set merge_when_pipeline_succeeds = false\n\n## Step 5: Update ALM Status (All Linked Platforms)\n\nUpdate the originating platform:\n- GitHub: update project field to 'In Review', link PR\n- Asana: move task to 'In Review' section, add PR link as comment\n- GitLab: add label 'workflow::in-review', link MR\n\nIf cross-platform (e.g., Asana task → GitHub PR):\n- Add comment to Asana task with PR URL\n- Add comment to GitHub PR with Asana task link\n\nNEVER merge. Human approves.\n\nOutput: [RELEASED: {platform} PR/MR #{number} | ALM: {platforms} updated | BLOCKED: reason]"
   }
 }

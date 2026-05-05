@@ -1,0 +1,26 @@
+FROM python:3.12-slim AS base
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git curl && rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs && rm -rf /var/lib/apt/lists/*
+
+COPY infra/docker/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy agent application layer
+COPY infra/docker/agents/ /app/agents/
+COPY infra/docker/agent_entrypoint.py .
+
+# Copy factory template artifacts
+COPY .kiro/ /app/.kiro/
+COPY docs/templates/ /app/docs/templates/
+COPY scripts/ /app/scripts/
+
+RUN useradd -m -s /bin/bash agent
+USER agent
+
+ENV PYTHONUNBUFFERED=1
+ENTRYPOINT ["python3", "agent_entrypoint.py"]

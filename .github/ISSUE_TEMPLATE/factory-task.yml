@@ -1,0 +1,130 @@
+name: "Factory Task"
+description: "Create a task for the Code Factory agents to execute"
+title: "[FACTORY] "
+labels: ["factory-ready"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This issue will be picked up by the Code Factory when moved to "In Progress".
+        Fill in all required fields so the agent can start without clarification.
+
+  - type: dropdown
+    id: type
+    attributes:
+      label: Task Type
+      options:
+        - feature
+        - bugfix
+        - infrastructure
+        - documentation
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - P0 (critical)
+        - P1 (high)
+        - P2 (medium)
+        - P3 (low)
+      default: 2
+    validations:
+      required: true
+
+  - type: dropdown
+    id: level
+    attributes:
+      label: Engineering Level
+      description: Determines which hooks are activated
+      options:
+        - L2 (targeted fix)
+        - L3 (cross-module)
+        - L4 (architectural)
+      default: 1
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What needs to change and why?
+      placeholder: |
+        ## Current State
+        ...
+        ## Desired State
+        ...
+        ## Why
+        ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance Criteria
+      description: Testable criteria. The agent uses these as the halting condition.
+      placeholder: |
+        - [ ] Criterion 1
+        - [ ] Criterion 2
+        - [ ] All existing tests pass
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: tech-stack
+    attributes:
+      label: Tech Stack
+      description: Technologies involved (select all that apply)
+      options:
+        - label: Python
+        - label: TypeScript / JavaScript
+        - label: Java
+        - label: Go
+        - label: Rust
+        - label: React / Next.js
+        - label: FastAPI / Flask / Django
+        - label: AWS (Bedrock, ECS, Lambda, S3, DynamoDB)
+        - label: Terraform / IaC
+        - label: Docker / Containers
+        - label: PostgreSQL / MySQL
+        - label: Redis / ElastiCache
+
+  - type: checkboxes
+    id: target-environment
+    attributes:
+      label: Target Environment
+      options:
+        - label: AWS
+        - label: Azure
+        - label: GCP
+        - label: On-premises
+        - label: Local development only
+
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints
+      description: What must NOT change? What is out of scope?
+    validations:
+      required: false
+
+  - type: textarea
+    id: related-docs
+    attributes:
+      label: Related Documents
+      description: Links to design docs, specs, ADRs
+    validations:
+      required: false
+
+  - type: input
+    id: depends-on
+    attributes:
+      label: Dependencies
+      description: Issue numbers this depends on (comma-separated)
+      placeholder: "#101, #102"
+    validations:
+      required: false

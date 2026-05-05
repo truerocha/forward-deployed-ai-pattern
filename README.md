@@ -6,7 +6,7 @@
 > The Staff Engineer writes specs. The factory ships code.
 
 [![Tests](https://img.shields.io/badge/tests-54%20passed-brightgreen)]()
-[![Hooks](https://img.shields.io/badge/hooks-13%20(4%20V2%20%2B%209%20V3)-blue)]()
+[![Hooks](https://img.shields.io/badge/hooks-14%20(4%20V2%20%2B%2010%20V3)-blue)]()
 [![Autonomy Level](https://img.shields.io/badge/level-L4%20Autonomous%20Factory-purple)]()
 
 ---
@@ -44,10 +44,21 @@ Improvement: +67 percentage points
 
 ## Architecture
 
-![Autonomous Code Factory Architecture](docs/architecture/autonomous-code-factory.png)
+![Autonomous Code Factory — Hero Overview](docs/architecture/planes/00-hero-overview.png)
 
-> Spine: Staff Engineer → ALM → Spec → Agent Execution → CI/CD → Ship-Readiness → Delivery → Staff Engineer approves outcome.
-> Branches: Cross-session learning (notes) and meta-agent (prompt refinement).
+The factory is organized into **5 modular planes**, each with its own diagram and design narrative:
+
+| # | Plane | Responsibility | Diagram |
+|---|-------|---------------|---------|
+| 1 | [Version Source Management](docs/architecture/planes/01-vsm-plane.md) | Git, ALM platforms, project isolation, PR delivery | ![VSM](docs/architecture/planes/01-vsm-plane.png) |
+| 2 | [FDE (Forward Deployed Engineer)](docs/architecture/planes/02-fde-plane.md) | Autonomy resolution, agent builder, pipeline execution | ![FDE](docs/architecture/planes/02-fde-plane.png) |
+| 3 | [Context](docs/architecture/planes/03-context-plane.md) | Constraint extraction, prompt registry, scope boundaries, learning | ![Context](docs/architecture/planes/03-context-plane.png) |
+| 4 | [Data](docs/architecture/planes/04-data-plane.md) | Router, task queue, artifact storage, EventBridge | ![Data](docs/architecture/planes/04-data-plane.png) |
+| 5 | [Control](docs/architecture/planes/05-control-plane.md) | SDLC gates, DORA metrics, pipeline safety, failure modes | ![Control](docs/architecture/planes/05-control-plane.png) |
+
+> Full single-diagram view: [docs/architecture/autonomous-code-factory.png](docs/architecture/autonomous-code-factory.png)
+
+**Cloud orchestration (optional):** When deployed to AWS, ALM webhooks flow through API Gateway → EventBridge → ECS Fargate, where a Strands agent container runs the FDE protocol headless using Bedrock for inference. Results are written to S3 and ALM status is updated automatically. See [Cloud Orchestration Flow](docs/flows/13-cloud-orchestration.md).
 
 Each workspace is a **production line** for a specific codebase. The Staff Engineer manages multiple lines simultaneously, routing work and approving outcomes.
 
@@ -61,31 +72,52 @@ Each workspace is a **production line** for a specific codebase. The Staff Engin
 
 ## Quick Start
 
-### 1. Global setup (one-time)
+### 1. Pre-flight validation
 
 ```bash
 git clone https://github.com/truerocha/forward-deployed-engineer-pattern.git ~/factory-template
 cd ~/factory-template
-bash scripts/provision-workspace.sh --global
+bash scripts/pre-flight-fde.sh
 ```
 
-### 2. Onboard a project
+The pre-flight script validates your machine (tools, runtimes, credentials) and collects project configuration interactively. It writes a manifest to `~/.kiro/fde-manifest.json`.
+
+### 2. Validate deployment resources
 
 ```bash
-cd ~/projects/my-project
-bash ~/factory-template/scripts/provision-workspace.sh --project
-# Then customize .kiro/steering/fde.md for YOUR project
+bash scripts/validate-deploy-fde.sh
 ```
 
-### 3. Activate in Kiro
+Validates three planes:
+- **Control Plane**: Kiro steerings, hooks, specs structure
+- **Data Plane**: ALM platforms (GitHub Projects / Asana / GitLab Ultimate) API access
+- **FDE Plane**: MCP servers, factory template integrity, global laws
 
+### 3. Deploy the Code Factory
+
+```bash
+bash scripts/code-factory-setup.sh
 ```
+
+For each project in your manifest:
+- **Greenfield**: initializes repo, creates `requirements.md` template for agents to read
+- **Brownfield**: clones repo, scans conventions (languages, test frameworks, linters, CI/CD) so agents match existing patterns
+- Provisions workspace with hooks, steerings, MCP config, and task templates
+- Enables hooks automatically based on engineering level (L2/L3/L4)
+- Writes factory state dashboard to `~/.kiro/factory-state.md`
+
+### 4. Start working
+
+```bash
+# Open your project in Kiro IDE
+# Move items to "In Progress" on your board (GitHub Projects / Asana / GitLab)
+# Trigger the work intake hook, or:
 #fde Execute the spec in .kiro/specs/my-feature.md
 ```
 
 See [docs/guides/fde-adoption-guide.md](docs/guides/fde-adoption-guide.md) for the full walkthrough with Next.js and Python microservice examples.
 
-## The 13 Hooks
+## The 14 Hooks
 
 | Hook | Event | Purpose | Level |
 |------|-------|---------|-------|
@@ -95,9 +127,10 @@ See [docs/guides/fde-adoption-guide.md](docs/guides/fde-adoption-guide.md) for t
 | fde-pipeline-validation | postTaskExecution | Pipeline testing + 5W2H + report | L3+ |
 | fde-test-immutability | preToolUse (write) | VETO writes to approved tests | L2+ |
 | fde-circuit-breaker | postToolUse (shell) | Error classification (code compared to environment) | L2+ |
-| fde-enterprise-backlog | postTaskExecution | ALM sync (GitHub Issues / Asana) | L3+ |
+| fde-enterprise-backlog | postTaskExecution | ALM sync (GitHub / Asana / GitLab) | L3+ |
 | fde-enterprise-docs | postTaskExecution | ADR generation + hindsight notes | L3+ |
 | fde-enterprise-release | userTriggered | Semantic commit + MR through MCP | L3+ |
+| fde-work-intake | userTriggered | Scan boards, create specs, start pipeline | L3+ |
 | fde-ship-readiness | userTriggered | Docker + E2E + Playwright + holdout | L3+ |
 | fde-alternative-exploration | userTriggered | 2 approaches for L4 architectural tasks | L4 |
 | fde-notes-consolidate | userTriggered | Archive old notes, merge duplicates | L3+ |
@@ -109,15 +142,15 @@ See [docs/guides/fde-adoption-guide.md](docs/guides/fde-adoption-guide.md) for t
 forward-deployed-engineer-pattern/
 +-- .kiro/                          # Factory template (copy to your projects)
 |   +-- steering/                   # Protocol + enterprise context
-|   +-- hooks/                      # 13 hooks (4 V2 + 9 V3)
+|   +-- hooks/                      # 14 hooks (4 V2 + 10 V3)
 |   +-- specs/                      # Working memory + holdout templates
 |   +-- notes/                      # Cross-session learning structure
 |   +-- meta/                       # Human feedback + refinement log
 |   +-- settings/                   # MCP config template
 +-- docs/
 |   +-- architecture/               # System diagram + design document (DDR)
-|   +-- adr/                        # 7 Architecture Decision Records
-|   +-- flows/                      # 10 Mermaid feature flow diagrams
+|   +-- adr/                        # 10 Architecture Decision Records
+|   +-- flows/                      # 13 Mermaid feature flow diagrams
 |   +-- blueprint/                  # V3 blueprint + artifacts + deploy guide
 |   +-- design/                     # V2 design document (research foundations)
 |   +-- guides/                     # Adoption guide with walkthroughs
@@ -126,9 +159,20 @@ forward-deployed-engineer-pattern/
 |   +-- web-app/                    # Example: FDE for a web application
 |   +-- data-pipeline/              # Example: FDE for a data pipeline
 +-- scripts/
-|   +-- provision-workspace.sh      # Automated onboarding (--global | --project)
+|   +-- pre-flight-fde.sh          # Step 1: Validate machine + collect config
+|   +-- validate-deploy-fde.sh     # Step 2: Validate control/data/FDE planes
+|   +-- code-factory-setup.sh      # Step 3: Deploy factory (greenfield + brownfield)
+|   +-- provision-workspace.sh     # Legacy: manual onboarding (--global | --project)
+|   +-- validate-alm-api.sh        # ALM API connectivity checks
+|   +-- validate-aws-iam.py        # AWS IAM permission validator
+|   +-- validate-e2e-cloud.sh     # E2E cloud infrastructure validation
+|   +-- teardown-fde.sh           # Decommission AWS resources (Terraform or tag-based)
 |   +-- generate_architecture_diagram.py
 |   +-- lint_language.py
++-- infra/
+|   +-- terraform/                  # AWS IaC (ECR, ECS, Bedrock, S3, Secrets, VPC)
+|   +-- docker/                     # Strands agent container (Dockerfile + entrypoint)
+|   |   +-- agents/                 # Agent application layer (registry, router, orchestrator, tools, prompts)
 +-- tests/
     +-- test_fde_e2e_protocol.py    # Structural E2E test (48 tests)
     +-- test_fde_quality_threshold.py # Quality comparison test (6 tests)

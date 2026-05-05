@@ -22,6 +22,32 @@ Optional:
 
 ## Step 1: Set Up Global Factory Infrastructure (One-Time)
 
+### Recommended: Automated Onboarding Pipeline
+
+The fastest path uses the three-script pipeline that validates your environment, collects configuration interactively, and deploys everything:
+
+```bash
+git clone https://github.com/truerocha/forward-deployed-engineer-pattern.git ~/factory-template
+cd ~/factory-template
+
+# Step 1: Validate machine + collect project config
+bash scripts/pre-flight-fde.sh
+
+# Step 2: Validate all planes (control, data, FDE, cloud)
+bash scripts/validate-deploy-fde.sh
+
+# Step 3: Deploy factory (global infra + per-project workspaces + optional AWS)
+bash scripts/code-factory-setup.sh
+```
+
+The scripts operate as linters — they report all issues with remediation instructions and never hard-break. You can fix issues incrementally and re-run.
+
+See `docs/flows/12-staff-engineer-onboarding.md` for the full Mermaid flow diagram.
+
+### Alternative: Manual Setup
+
+If you prefer manual control, use `provision-workspace.sh` directly:
+
 This creates the universal laws and shared resources that ALL your projects inherit.
 
 ```bash
