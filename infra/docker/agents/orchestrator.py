@@ -35,6 +35,7 @@ from .execution_plan import (
 from .registry import AgentRegistry, AgentDefinition
 from .router import AgentRouter, RoutingDecision
 from .scope_boundaries import check_scope
+from .workspace_setup import setup_workspace, push_and_create_pr, WorkspaceContext
 from . import task_queue
 
 logger = logging.getLogger("fde.orchestrator")
@@ -176,6 +177,15 @@ class Orchestrator:
         # ── Step 7: Agent Builder ───────────────────────────────
         agent_names = self._build_pipeline(data_contract, extraction_result)
 
+        # ── Step 7.5: Workspace Setup (COE-011) ────────────────
+        # Clone the target repo and create a feature branch.
+        # This must happen AFTER gates pass but BEFORE agents execute.
+        workspace = setup_workspace(event.get("detail", event), decision.metadata)
+        if workspace.ready:
+            logger.info("Workspace ready: %s (branch: %s)", workspace.repo_path, workspace.branch_name)
+        else:
+            logger.warning("Workspace setup failed: %s — agents will run without repo context", workspace.error)
+
         # ── Step 8: Execute Pipeline (inner loop with plan tracking) ──
         result = self._execute_pipeline_with_plan(
             agent_names, decision, extraction_result, dor_result, plan, gates,
@@ -186,6 +196,29 @@ class Orchestrator:
             plan = start_milestone(plan)
             plan = complete_milestone(plan, "Ship readiness validated")
             save_plan(plan, self._plans_dir)
+
+        # ── Step 9.5: Push & Create PR (if workspace is ready) ──
+        if workspace.ready and result.get("status") == "completed":
+            pr_title = f"feat(GH-{workspace.issue_number}): {data_contract.get('title', 'Task completion')}"
+            pr_body = (
+                f"## Automated PR from FDE Code Factory\n\n"
+                f"**Issue**: #{workspace.issue_number}\n"
+                f"**Branch**: `{workspace.branch_name}`\n"
+                f"**Autonomy Level**: {autonomy_result.level}\n"
+                f"**Confidence**: {scope_result.confidence_level}\n\n"
+                f"### Pipeline Summary\n"
+                f"- Milestones: {plan.completed_count}/{plan.total_count}\n"
+                f"- Constraints extracted: {len(extraction_result.constraints)}\n"
+                f"- Agents executed: {', '.join(agent_names)}\n"
+            )
+            pr_result = push_and_create_pr(workspace, pr_title, pr_body)
+            if pr_result.get("pr_url"):
+                logger.info("PR delivered: %s", pr_result["pr_url"])
+                result["pr_url"] = pr_result["pr_url"]
+                result["pr_number"] = pr_result.get("pr_number")
+            else:
+                logger.warning("PR delivery failed: %s", pr_result.get("error", "unknown"))
+                result["pr_error"] = pr_result.get("error", "unknown")
 
         # ── Step 10: DAG Resolution (ADR-014) ───────────────────
         # Signal task completion to the task queue. This triggers
