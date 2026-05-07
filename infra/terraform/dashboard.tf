@@ -25,6 +25,7 @@ resource "aws_lambda_function" "dashboard_status" {
     variables = {
       TASK_QUEUE_TABLE      = aws_dynamodb_table.task_queue.name
       AGENT_LIFECYCLE_TABLE = aws_dynamodb_table.agent_lifecycle.name
+      DORA_METRICS_TABLE    = aws_dynamodb_table.dora_metrics.name
       ENVIRONMENT           = var.environment
       AWS_REGION_NAME       = var.aws_region
     }
@@ -65,6 +66,8 @@ resource "aws_iam_role_policy" "dashboard_status_policy" {
           "${aws_dynamodb_table.task_queue.arn}/index/*",
           aws_dynamodb_table.agent_lifecycle.arn,
           "${aws_dynamodb_table.agent_lifecycle.arn}/index/*",
+          aws_dynamodb_table.dora_metrics.arn,
+          "${aws_dynamodb_table.dora_metrics.arn}/index/*",
         ]
       },
       {
