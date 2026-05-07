@@ -37,6 +37,7 @@ from .router import AgentRouter, RoutingDecision
 from .scope_boundaries import check_scope
 from .workspace_setup import setup_workspace, push_and_create_pr, WorkspaceContext
 from .project_registry import get_registry
+from .stream_callback import DashboardCallback
 from . import task_queue
 
 logger = logging.getLogger("fde.orchestrator")
@@ -611,7 +612,8 @@ class Orchestrator:
             task_queue.append_task_event(plan.task_id, "agent", f"Agent '{agent_name}' executing")
 
             try:
-                agent = self._registry.create_agent(agent_name)
+                callback = DashboardCallback(task_id=plan.task_id)
+                agent = self._registry.create_agent(agent_name, callback_handler=callback)
             except KeyError as e:
                 logger.error("Agent not found: %s", e)
                 results.append({
