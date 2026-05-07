@@ -166,6 +166,7 @@ def main():
                 "issue": {
                     "number": int(os.environ.get("EVENT_ISSUE_NUMBER", "0") or "0"),
                     "title": os.environ.get("EVENT_ISSUE_TITLE", ""),
+                    "labels": [{"name": os.environ.get("EVENT_LABEL", "")}],
                 },
                 "repository": {
                     "full_name": os.environ.get("EVENT_REPO", ""),
