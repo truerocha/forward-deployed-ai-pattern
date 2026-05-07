@@ -124,6 +124,29 @@ class Orchestrator:
         task_id = data_contract.get("task_id", f"TASK-{id(event)}")
         all_milestones = gates.outer_gates + gates.inner_gates
 
+        # ── Step 3.1: Claim task from queue (correlate with webhook_ingest) ──
+        # The webhook_ingest Lambda creates the task record in DynamoDB.
+        # We need to find and claim that record so stage updates go to the
+        # same row the dashboard reads from.
+        issue_id = data_contract.get("issue_id", "")
+        if not issue_id:
+            repo = data_contract.get("repo", "")
+            issue_num = data_contract.get("issue_number", 0)
+            if repo and issue_num:
+                issue_id = f"{repo}#{issue_num}"
+
+        if issue_id:
+            existing_task = task_queue.find_task_by_issue(issue_id)
+            if existing_task:
+                task_id = existing_task["task_id"]
+                task_queue.claim_task(task_id, "fde-orchestrator")
+                logger.info("Claimed existing task %s (issue: %s)", task_id, issue_id)
+            else:
+                logger.info("No existing task for issue %s — using generated ID %s", issue_id, task_id)
+
+        # Emit initial stage update
+        task_queue.update_task_stage(task_id, "ingested")
+
         existing_plan = load_plan(task_id, self._plans_dir)
         if existing_plan:
             resume_index = resume_from_plan(existing_plan)
@@ -180,13 +203,16 @@ class Orchestrator:
         # ── Step 7.5: Workspace Setup (COE-011) ────────────────
         # Clone the target repo and create a feature branch.
         # This must happen AFTER gates pass but BEFORE agents execute.
+        task_queue.update_task_stage(task_id, "workspace")
         workspace = setup_workspace(event.get("detail", event), decision.metadata)
         if workspace.ready:
             logger.info("Workspace ready: %s (branch: %s)", workspace.repo_path, workspace.branch_name)
         else:
             logger.warning("Workspace setup failed: %s — agents will run without repo context", workspace.error)
+            task_queue.update_task_stage(task_id, "workspace", workspace_error=workspace.error)
 
         # ── Step 8: Execute Pipeline (inner loop with plan tracking) ──
+        task_queue.update_task_stage(task_id, "reconnaissance")
         result = self._execute_pipeline_with_plan(
             agent_names, decision, extraction_result, dor_result, plan, gates,
         )
@@ -199,6 +225,7 @@ class Orchestrator:
 
         # ── Step 9.5: Push & Create PR (if workspace is ready) ──
         if workspace.ready and result.get("status") == "completed":
+            task_queue.update_task_stage(task_id, "review")
             pr_title = f"feat(GH-{workspace.issue_number}): {data_contract.get('title', 'Task completion')}"
             pr_body = (
                 f"## Automated PR from FDE Code Factory\n\n"
@@ -216,8 +243,10 @@ class Orchestrator:
                 logger.info("PR delivered: %s", pr_result["pr_url"])
                 result["pr_url"] = pr_result["pr_url"]
                 result["pr_number"] = pr_result.get("pr_number")
+                task_queue.update_task_stage(task_id, "completion", pr_url=pr_result["pr_url"])
             else:
                 logger.warning("PR delivery failed: %s", pr_result.get("error", "unknown"))
+                task_queue.update_task_stage(task_id, "completion")
                 result["pr_error"] = pr_result.get("error", "unknown")
 
         # ── Step 10: DAG Resolution (ADR-014) ───────────────────
@@ -521,8 +550,19 @@ class Orchestrator:
                     save_plan(plan, self._plans_dir)
 
         # Execute agents
+        # Map agent names to dashboard stage names for real-time progress
+        _AGENT_TO_STAGE = {
+            "reconnaissance": "reconnaissance",
+            "engineering": "engineering",
+            "reporting": "completion",
+        }
+
         for agent_name in agent_names:
             logger.info("Executing pipeline stage: %s", agent_name)
+
+            # Update dashboard stage (non-blocking)
+            dashboard_stage = _AGENT_TO_STAGE.get(agent_name, agent_name)
+            task_queue.update_task_stage(plan.task_id, dashboard_stage)
 
             try:
                 agent = self._registry.create_agent(agent_name)

@@ -82,6 +82,74 @@ def claim_task(task_id: str, agent_name: str) -> bool:
         return False
 
 
+def update_task_stage(task_id: str, stage: str, **kwargs) -> None:
+    """Update the current_stage field for dashboard visibility.
+
+    Called by the orchestrator at each pipeline milestone so the dashboard
+    shows real-time stage progression.
+
+    Args:
+        task_id: The task to update.
+        stage: The new stage name (e.g., 'workspace', 'reconnaissance', 'engineering').
+        **kwargs: Additional fields to update (e.g., pr_url, workspace_error).
+    """
+    table = _get_table()
+    update_expr = "SET current_stage = :stage, updated_at = :now"
+    expr_values = {":stage": stage, ":now": _now()}
+
+    # Allow passing additional fields (pr_url, workspace_error, etc.)
+    for key, value in kwargs.items():
+        update_expr += f", {key} = :{key}"
+        expr_values[f":{key}"] = value
+
+    try:
+        table.update_item(
+            Key={"task_id": task_id},
+            UpdateExpression=update_expr,
+            ExpressionAttributeValues=expr_values,
+        )
+        logger.info("Task %s → stage: %s", task_id, stage)
+    except Exception as e:
+        # Non-blocking — don't fail the pipeline for a dashboard update
+        logger.warning("Failed to update stage for %s: %s", task_id, e)
+
+
+def find_task_by_issue(issue_id: str) -> dict | None:
+    """Find a READY task by its issue_id field.
+
+    Used by the orchestrator to correlate with the task created by the
+    webhook_ingest Lambda. The issue_id format is 'owner/repo#number'.
+
+    Args:
+        issue_id: The issue identifier (e.g., 'org/repo#42').
+
+    Returns:
+        The task item if found, or None.
+    """
+    table = _get_table()
+    # Query READY tasks and filter by issue_id
+    ready_tasks = table.query(
+        IndexName="status-created-index",
+        KeyConditionExpression=Key("status").eq("READY"),
+    ).get("Items", [])
+
+    for task in ready_tasks:
+        if task.get("issue_id") == issue_id:
+            return task
+
+    # Also check IN_PROGRESS (in case of restart/resume)
+    in_progress = table.query(
+        IndexName="status-created-index",
+        KeyConditionExpression=Key("status").eq("IN_PROGRESS"),
+    ).get("Items", [])
+
+    for task in in_progress:
+        if task.get("issue_id") == issue_id:
+            return task
+
+    return None
+
+
 def complete_task(task_id: str, result: str) -> dict:
     table = _get_table()
     table.update_item(
