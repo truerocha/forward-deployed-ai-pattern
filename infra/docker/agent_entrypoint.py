@@ -145,16 +145,45 @@ def main():
     eventbridge_event = os.environ.get("EVENTBRIDGE_EVENT", "")
     task_spec_path = os.environ.get("TASK_SPEC", "")
 
+    # Support flat env vars from EventBridge InputTransformer (COE-011 fix).
+    # ECS targets cannot reliably pass complex JSON via InputTransformer,
+    # so we extract individual fields and reconstruct the event here.
+    event_source = os.environ.get("EVENT_SOURCE", "")
+    event_action = os.environ.get("EVENT_ACTION", "")
+
     if eventbridge_event:
-        logger.info("Mode: EventBridge event")
+        logger.info("Mode: EventBridge event (EVENTBRIDGE_EVENT)")
         result = orchestrator.handle_event(json.loads(eventbridge_event))
+        logger.info("Result: %s", json.dumps(result, default=str))
+    elif event_source and event_action:
+        logger.info("Mode: EventBridge event (flat env vars)")
+        reconstructed_event = {
+            "source": event_source,
+            "detail-type": os.environ.get("EVENT_DETAIL_TYPE", ""),
+            "detail": {
+                "action": event_action,
+                "label": {"name": os.environ.get("EVENT_LABEL", "")},
+                "issue": {
+                    "number": int(os.environ.get("EVENT_ISSUE_NUMBER", "0") or "0"),
+                    "title": os.environ.get("EVENT_ISSUE_TITLE", ""),
+                },
+                "repository": {
+                    "full_name": os.environ.get("EVENT_REPO", ""),
+                },
+            },
+        }
+        logger.info("Reconstructed event: source=%s, issue=#%s %s",
+                    event_source,
+                    reconstructed_event["detail"]["issue"]["number"],
+                    reconstructed_event["detail"]["issue"]["title"])
+        result = orchestrator.handle_event(reconstructed_event)
         logger.info("Result: %s", json.dumps(result, default=str))
     elif task_spec_path:
         logger.info("Mode: Direct spec — %s", task_spec_path)
         result = orchestrator.handle_spec(read_spec.fn(task_spec_path), task_spec_path)
         logger.info("Result: %s", json.dumps(result, default=str))
     else:
-        logger.info("No task. Set TASK_SPEC or EVENTBRIDGE_EVENT.")
+        logger.info("No task. Set TASK_SPEC, EVENTBRIDGE_EVENT, or EVENT_SOURCE+EVENT_ACTION.")
 
     logger.info("Agent execution complete.")
 

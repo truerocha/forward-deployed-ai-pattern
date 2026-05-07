@@ -6,6 +6,28 @@
 
 ---
 
+## COE-011: Webhook delivered (HTTP 200) but no ECS task ran — InputTransformer + ECS silent failure
+
+- **Date**: 2026-05-06 / 2026-05-07
+- **Severity**: Infrastructure (production pipeline blocked)
+- **Found in**: `infra/terraform/eventbridge.tf` — InputTransformer template, `infra/docker/Dockerfile.strands-agent` — platform mismatch
+- **Description**: GitHub webhook delivered successfully (HTTP 200) but no ECS task was triggered. The full pipeline (API Gateway → EventBridge → Rule Match) was working correctly. Two root causes were identified through systematic data-plane investigation:
+  1. **InputTransformer produces invalid ECS RunTask overrides**: The template `"value": "{\"source\":\"<source>\",\"detail-type\":\"<detailType>\",\"detail\":<detail>}"` injects a raw JSON object (`<detail>`) into a string value without escaping. ECS RunTask silently rejects the malformed overrides JSON — no task is created, no error is surfaced. EventBridge reports no FailedInvocations metric (or metrics are severely delayed on custom buses).
+  2. **Docker image built for wrong platform**: Image was built on Apple Silicon (arm64) but ECS Fargate requires linux/amd64. Error: `CannotPullContainerError: image Manifest does not contain descriptor matching platform 'linux/amd64'`.
+- **Fix**:
+  1. Changed InputTransformer to extract **individual scalar fields** as separate environment variables (EVENT_SOURCE, EVENT_ACTION, EVENT_LABEL, EVENT_ISSUE_NUMBER, EVENT_ISSUE_TITLE, EVENT_REPO). No complex JSON in string values.
+  2. Updated `agent_entrypoint.py` to reconstruct the event from flat env vars when EVENTBRIDGE_EVENT is not set.
+  3. Rebuilt Docker image with `--platform linux/amd64` and pushed to ECR.
+  4. Added `eventbridge-observability.tf` with catch-all logging rule for permanent bus visibility.
+- **Root cause**: EventBridge InputTransformer with ECS targets silently fails when the template produces invalid JSON for the RunTask `overrides` parameter. No error is returned, no metric is emitted, no task is created. The only way to detect this is to add a separate CloudWatch Logs target to the same rule and verify the rule matches independently of the ECS target.
+- **Prevention**: 
+  - Never embed JSON objects (`<variable>` without quotes) inside string values in InputTransformer templates for ECS targets.
+  - Use flat scalar env vars pattern for ECS container overrides.
+  - Always build Docker images with `--platform linux/amd64` for Fargate.
+  - The catch-all logging rule provides permanent observability on the bus.
+- **Proven in production**: Task `03b21106` (2026-05-07T02:20:40Z) — started by `events-rule/fde-dev-github-factory-r`, agent initialized, event reconstructed from flat env vars, router processed successfully.
+- **Well-Architected alignment**: OPS 6 (telemetry), OPS 8 (respond to events), REL 9 (fault isolation)
+
 ## COE-010: Systemic doc-drift pattern resolved with automated detection
 
 - **Date**: 2026-05-05

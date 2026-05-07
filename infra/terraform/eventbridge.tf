@@ -35,7 +35,7 @@ resource "aws_cloudwatch_event_rule" "gitlab_factory_ready" {
   event_pattern = jsonencode({
     source      = ["fde.gitlab.webhook"]
     detail-type = ["issue.updated"]
-    detail      = {
+    detail = {
       action = ["update"]
     }
   })
@@ -75,9 +75,9 @@ resource "aws_iam_role_policy" "eventbridge_ecs_run_task" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect   = "Allow"
-        Action   = ["ecs:RunTask"]
-        Resource = [aws_ecs_task_definition.strands_agent.arn]
+        Effect    = "Allow"
+        Action    = ["ecs:RunTask"]
+        Resource  = [aws_ecs_task_definition.strands_agent.arn]
         Condition = { ArnLike = { "ecs:cluster" = aws_ecs_cluster.factory.arn } }
       },
       {
@@ -98,20 +98,38 @@ locals {
     security_groups     = [module.vpc.ecs_security_group_id]
   }
 
+  # COE-011: EventBridge InputTransformer + ECS targets cannot reliably pass
+  # complex JSON objects as environment variable values. The ECS RunTask API
+  # silently rejects the overrides when the value contains unescaped JSON.
+  #
+  # Solution: Extract individual scalar fields from the event and pass them
+  # as separate environment variables. The agent_entrypoint.py reconstructs
+  # the event from these flat env vars (EVENT_SOURCE, EVENT_ACTION, etc.).
+  #
+  # This pattern is proven in production (task 03b21106, 2026-05-07).
   input_transformer_paths = {
-    source     = "$.source"
-    detailType = "$.detail-type"
-    detail     = "$.detail"
+    source      = "$.source"
+    detailType  = "$.detail-type"
+    action      = "$.detail.action"
+    labelName   = "$.detail.label.name"
+    issueNumber = "$.detail.issue.number"
+    issueTitle  = "$.detail.issue.title"
+    repoName    = "$.detail.repository.full_name"
   }
 
   input_transformer_template = <<-TEMPLATE
     {
       "containerOverrides": [{
         "name": "strands-agent",
-        "environment": [{
-          "name": "EVENTBRIDGE_EVENT",
-          "value": "{\"source\":\"<source>\",\"detail-type\":\"<detailType>\",\"detail\":<detail>}"
-        }]
+        "environment": [
+          {"name": "EVENT_SOURCE", "value": "<source>"},
+          {"name": "EVENT_DETAIL_TYPE", "value": "<detailType>"},
+          {"name": "EVENT_ACTION", "value": "<action>"},
+          {"name": "EVENT_LABEL", "value": "<labelName>"},
+          {"name": "EVENT_ISSUE_NUMBER", "value": "<issueNumber>"},
+          {"name": "EVENT_ISSUE_TITLE", "value": "<issueTitle>"},
+          {"name": "EVENT_REPO", "value": "<repoName>"}
+        ]
       }]
     }
   TEMPLATE

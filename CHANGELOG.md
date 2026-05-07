@@ -8,6 +8,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased] — 2026-05-06
 
+### Added — EventBridge Observability (COE-011)
+- `infra/terraform/eventbridge-observability.tf` — Catch-all logging rule (all events → CloudWatch Logs), FailedInvocations alarm, API Gateway 4xx/5xx alarms, CloudWatch Log resource policy for EventBridge delivery.
+- `scripts/validate-webhook-eventbridge.sh` — Three-test isolation script for webhook→ECS path validation.
+
+### Fixed — EventBridge → ECS Pipeline (COE-011)
+- `infra/terraform/eventbridge.tf` — InputTransformer changed from broken single-JSON-string pattern to flat scalar env vars (EVENT_SOURCE, EVENT_ACTION, EVENT_LABEL, EVENT_ISSUE_NUMBER, EVENT_ISSUE_TITLE, EVENT_REPO). Root cause: ECS RunTask silently rejects overrides with unescaped JSON objects in string values.
+- `infra/docker/agent_entrypoint.py` — Added flat env var reconstruction mode: when EVENT_SOURCE+EVENT_ACTION are set, reconstructs the event object from individual env vars. Maintains backward compatibility with EVENTBRIDGE_EVENT and TASK_SPEC modes.
+- `infra/docker/Dockerfile.strands-agent` — Rebuilt with `--platform linux/amd64` for ECS Fargate compatibility (was arm64 from Apple Silicon build).
+- `docs/corrections-of-error.md` — COE-011: Full root cause analysis with production evidence (task 03b21106).
+
 ### Added — Repo Onboarding Agent (Phase 0, ADR-015)
 - `infra/docker/agents/onboarding/` — Phase 0 codebase reasoning brain (13 modules). Sequential pipeline: Trigger Handler → Repo Cloner → File Scanner (Magika) → AST Extractor (tree-sitter) → Convention Detector → Pattern Inferrer (Claude Haiku) → Catalog Writer (SQLite) → Steering Generator → S3 Persister.
 - `infra/docker/agents/onboarding/pipeline.py` — Orchestrates all 9 stages sequentially with observability, failure reporting, and incremental re-scan support.
