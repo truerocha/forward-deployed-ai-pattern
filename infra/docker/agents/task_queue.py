@@ -114,6 +114,41 @@ def update_task_stage(task_id: str, stage: str, **kwargs) -> None:
         logger.warning("Failed to update stage for %s: %s", task_id, e)
 
 
+def append_task_event(task_id: str, event_type: str, message: str) -> None:
+    """Append a reasoning event to the task's events list for Chain of Thought.
+
+    The dashboard reads these events and renders them in the Chain of Thought
+    panel so the PM can see what the agent is thinking/doing.
+
+    Events are capped at 50 per task to stay within DynamoDB item size limits.
+
+    Args:
+        task_id: The task to append the event to.
+        event_type: Event category (e.g., 'agent', 'system', 'tool', 'gate', 'error').
+        message: Human-readable event description (max 200 chars).
+    """
+    table = _get_table()
+    event_entry = {
+        "ts": _now(),
+        "type": event_type,
+        "msg": message[:200],
+    }
+
+    try:
+        table.update_item(
+            Key={"task_id": task_id},
+            UpdateExpression="SET events = list_append(if_not_exists(events, :empty), :evt), updated_at = :now",
+            ExpressionAttributeValues={
+                ":evt": [event_entry],
+                ":empty": [],
+                ":now": _now(),
+            },
+        )
+    except Exception as e:
+        # Non-blocking
+        logger.debug("Failed to append event for %s: %s", task_id, e)
+
+
 def find_task_by_issue(issue_id: str) -> dict | None:
     """Find a READY task by its issue_id field.
 

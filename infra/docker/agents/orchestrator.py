@@ -146,6 +146,7 @@ class Orchestrator:
 
         # Emit initial stage update
         task_queue.update_task_stage(task_id, "ingested")
+        task_queue.append_task_event(task_id, "system", f"Pipeline started — autonomy={autonomy_result.level}, confidence={scope_result.confidence_level}")
 
         existing_plan = load_plan(task_id, self._plans_dir)
         if existing_plan:
@@ -207,6 +208,7 @@ class Orchestrator:
         workspace = setup_workspace(event.get("detail", event), decision.metadata)
         if workspace.ready:
             logger.info("Workspace ready: %s (branch: %s)", workspace.repo_path, workspace.branch_name)
+            task_queue.append_task_event(task_id, "system", f"Workspace ready: {workspace.repo_full_name} → {workspace.branch_name}")
             # Inject workspace context into the agent's prompt so it knows
             # it's in a cloned repo and doesn't re-initialize git
             workspace_context = (
@@ -230,6 +232,7 @@ class Orchestrator:
         else:
             logger.warning("Workspace setup failed: %s — agents will run without repo context", workspace.error)
             task_queue.update_task_stage(task_id, "workspace", workspace_error=workspace.error)
+            task_queue.append_task_event(task_id, "error", f"Workspace failed: {workspace.error[:150]}")
 
         # ── Step 8: Execute Pipeline (inner loop with plan tracking) ──
         task_queue.update_task_stage(task_id, "reconnaissance")
@@ -583,6 +586,7 @@ class Orchestrator:
             # Update dashboard stage (non-blocking)
             dashboard_stage = _AGENT_TO_STAGE.get(agent_name, agent_name)
             task_queue.update_task_stage(plan.task_id, dashboard_stage)
+            task_queue.append_task_event(plan.task_id, "agent", f"Agent '{agent_name}' executing")
 
             try:
                 agent = self._registry.create_agent(agent_name)

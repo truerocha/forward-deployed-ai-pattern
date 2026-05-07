@@ -111,6 +111,7 @@ def _handle_tasks(event, context):
                 "elapsed_ms": _compute_elapsed(item),
                 "created_at": item.get("created_at", ""),
                 "updated_at": item.get("updated_at", ""),
+                "events": item.get("events", [])[-20:],  # Last 20 events for Chain of Thought
             })
 
         body = {

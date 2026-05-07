@@ -66,8 +66,19 @@ def handler(event, context):
         logger.info("Event did not produce a task (filtered out)")
         return {"statusCode": 200, "body": "filtered"}
 
-    # Write to task_queue table
+    # Write to task_queue table (idempotent — skip if issue_id already exists)
     table = dynamodb.Table(TASK_QUEUE_TABLE)
+
+    # Deduplicate: check if a task for this issue already exists
+    existing = _find_existing_task(table, task.get("issue_id", ""))
+    if existing:
+        logger.info("Task already exists for issue %s (task_id=%s) — skipping duplicate",
+                    task.get("issue_id"), existing.get("task_id"))
+        return {
+            "statusCode": 200,
+            "body": json.dumps({"task_id": existing["task_id"], "status": "duplicate_skipped"}),
+        }
+
     table.put_item(Item=task)
 
     # Create a provisional agent lifecycle record (CREATED state)
@@ -249,3 +260,32 @@ def _extract_priority(labels: list) -> str:
         if name in ("P0", "P1", "P2", "P3"):
             return name
     return "P2"
+
+
+def _find_existing_task(table, issue_id: str) -> dict | None:
+    """Check if a task already exists for this issue_id (deduplication).
+
+    Scans READY and IN_PROGRESS tasks. If found, returns the existing record
+    to prevent duplicate entries from webhook retries or duplicate events.
+    """
+    if not issue_id:
+        return None
+
+    try:
+        # Scan is acceptable here — table is small (< 50 active tasks)
+        response = table.scan(
+            FilterExpression="issue_id = :iid AND #s IN (:s1, :s2, :s3)",
+            ExpressionAttributeNames={"#s": "status"},
+            ExpressionAttributeValues={
+                ":iid": issue_id,
+                ":s1": "READY",
+                ":s2": "IN_PROGRESS",
+                ":s3": "RUNNING",
+            },
+            Limit=1,
+        )
+        items = response.get("Items", [])
+        return items[0] if items else None
+    except Exception as e:
+        logger.warning("Deduplication check failed (proceeding with insert): %s", e)
+        return None
