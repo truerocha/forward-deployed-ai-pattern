@@ -29,14 +29,23 @@ lifecycle_table = dynamodb.Table(AGENT_LIFECYCLE_TABLE)
 dora_table = dynamodb.Table(DORA_METRICS_TABLE)
 
 # Pipeline stages in execution order (for progress visualization)
+# Classic mode uses: ingested → workspace → reconnaissance → engineering → review → completion
+# Squad mode (ADR-019) uses agent role names as stages.
+# The progress bar works with both — unknown stages get a fallback calculation.
 PIPELINE_STAGES = [
     "ingested",
     "workspace",
     "reconnaissance",
     "intake",
+    "task",          # task-intake-eval-agent
+    "swe",           # swe-issue-code-reader, swe-code-context, swe-developer, swe-architect
+    "code",          # code-sec, code-rel, code-perf, code-ops, code-cost, code-sus
+    "architect",     # architect-standard-agent
+    "reviewer",      # reviewer-security-agent
     "engineering",
     "testing",
     "review",
+    "reporting",     # reporting-agent
     "completion",
 ]
 
