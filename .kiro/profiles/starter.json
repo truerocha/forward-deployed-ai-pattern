@@ -1,0 +1,20 @@
+{
+  "name": "starter",
+  "description": "Essential governance hooks for new teams. 6 hooks covering core quality gates. Target: teams scoring < 40 on maturity (DORA 'foundational challenges' archetype).",
+  "version": "1.0.0",
+  "hooks": [
+    "fde-dor-gate",
+    "fde-adversarial-gate",
+    "fde-dod-gate",
+    "fde-pipeline-validation",
+    "fde-test-immutability",
+    "fde-circuit-breaker"
+  ],
+  "maturity_range": {
+    "min": 0,
+    "max": 40
+  },
+  "dora_archetype": "foundational_challenges",
+  "estimated_overhead_percent": 8,
+  "upgrade_path": "standard"
+}

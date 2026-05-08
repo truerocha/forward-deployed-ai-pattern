@@ -1,0 +1,32 @@
+{
+  "name": "full",
+  "description": "Complete governance suite for high-performing teams. All 18 hooks including perturbation testing, alternative exploration, knowledge validation, and anti-instability. Target: teams scoring > 70 on maturity (DORA 'harmonious high-achievers' archetype).",
+  "version": "1.0.0",
+  "hooks": [
+    "fde-dor-gate",
+    "fde-adversarial-gate",
+    "fde-dod-gate",
+    "fde-pipeline-validation",
+    "fde-test-immutability",
+    "fde-circuit-breaker",
+    "fde-branch-eval",
+    "fde-ship-readiness",
+    "fde-work-intake",
+    "fde-prompt-refinement",
+    "fde-notes-consolidate",
+    "fde-doc-gardening",
+    "fde-alternative-exploration",
+    "fde-golden-principles",
+    "fde-enterprise-backlog",
+    "fde-enterprise-docs",
+    "fde-enterprise-release",
+    "fde-repo-onboard"
+  ],
+  "maturity_range": {
+    "min": 70,
+    "max": 100
+  },
+  "dora_archetype": "harmonious_high_achievers",
+  "estimated_overhead_percent": 15,
+  "downgrade_path": "standard"
+}

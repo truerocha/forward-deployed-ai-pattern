@@ -51,12 +51,12 @@ This document merges four complementary inputs into a single coherent, deploymen
 | 1.15 | Implement verification_metrics.py | `src/core/metrics/verification_metrics.py` | CREATE | 1.05 | ✅ |
 | 1.16 | Implement vsm_tracker.py | `src/core/metrics/vsm_tracker.py` | CREATE | 1.05 | ✅ |
 | 1.17 | Implement anti_instability_loop.py | `src/core/governance/anti_instability_loop.py` | CREATE | 1.14 | ✅ |
-| 1.18 | Create starter profile | `.kiro/profiles/starter.json` | CREATE | None | ☐ |
-| 1.19 | Create standard profile | `.kiro/profiles/standard.json` | CREATE | 1.18 | ☐ |
-| 1.20 | Create full profile | `.kiro/profiles/full.json` | CREATE | 1.19 | ☐ |
-| 1.21 | Write quickstart guide | `docs/quickstart.md` | CREATE | 1.18 | ☐ |
-| 1.22 | Write AI stance document (DORA C1 + O15 + O21) | `docs/operations/ai-stance.md` | CREATE | None | ☐ |
-| 1.23 | Write feature flags documentation | `docs/feature-flags.md` | CREATE | 1.13-1.17 | ☐ |
+| 1.18 | Create starter profile | `.kiro/profiles/starter.json` | CREATE | None | ✅ |
+| 1.19 | Create standard profile | `.kiro/profiles/standard.json` | CREATE | 1.18 | ✅ |
+| 1.20 | Create full profile | `.kiro/profiles/full.json` | CREATE | 1.19 | ✅ |
+| 1.21 | Write quickstart guide | `docs/quickstart.md` | CREATE | 1.18 | ✅ |
+| 1.22 | Write AI stance document (DORA C1 + O15 + O21) | `docs/operations/ai-stance.md` | CREATE | None | ✅ |
+| 1.23 | Write feature flags documentation | `docs/feature-flags.md` | CREATE | 1.13-1.17 | ✅ |
 | 1.24 | Implement gate_feedback_formatter.py (O19 P0) | `src/core/governance/gate_feedback_formatter.py` | CREATE | None | ☐ |
 | 1.25 | Update all hook prompts (structured feedback output) | `.kiro/hooks/*.kiro.hook` | MODIFY | 1.24 | ☐ |
 | 1.26 | Implement net_friction_calculator.py (O14) | `src/core/metrics/net_friction_calculator.py` | CREATE | 1.05 | ☐ |

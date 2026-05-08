@@ -1,0 +1,27 @@
+{
+  "name": "standard",
+  "description": "Extended governance for established teams. 12 hooks adding fidelity scoring, scope boundaries, and cost tracking. Target: teams scoring 40-70 on maturity (DORA 'balanced but plateaued' archetype).",
+  "version": "1.0.0",
+  "hooks": [
+    "fde-dor-gate",
+    "fde-adversarial-gate",
+    "fde-dod-gate",
+    "fde-pipeline-validation",
+    "fde-test-immutability",
+    "fde-circuit-breaker",
+    "fde-branch-eval",
+    "fde-ship-readiness",
+    "fde-work-intake",
+    "fde-prompt-refinement",
+    "fde-notes-consolidate",
+    "fde-doc-gardening"
+  ],
+  "maturity_range": {
+    "min": 40,
+    "max": 70
+  },
+  "dora_archetype": "balanced_but_plateaued",
+  "estimated_overhead_percent": 12,
+  "upgrade_path": "full",
+  "downgrade_path": "starter"
+}
