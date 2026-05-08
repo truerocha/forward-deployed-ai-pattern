@@ -1,0 +1,1 @@
+"""Portal component tests package."""
