@@ -63,8 +63,12 @@ class AgentRegistry:
         """List all registered agent names."""
         return list(self._definitions.keys())
 
-    def create_agent(self, name: str) -> Agent:
+    def create_agent(self, name: str, callback_handler=None) -> Agent:
         """Create a Strands Agent instance from a registered definition.
+
+        Args:
+            name: Registered agent name.
+            callback_handler: Optional callback for streaming events to dashboard.
 
         Raises:
             KeyError: If the agent name is not registered.
@@ -76,11 +80,16 @@ class AgentRegistry:
         model_id = defn.model_id or self._default_model_id
         model = BedrockModel(model_id=model_id, region_name=self._aws_region)
 
-        agent = Agent(
-            model=model,
-            system_prompt=defn.system_prompt,
-            tools=defn.tools,
-        )
+        kwargs = {
+            "model": model,
+            "system_prompt": defn.system_prompt,
+            "tools": defn.tools,
+        }
+        if callback_handler is not None:
+            kwargs["callback_handler"] = callback_handler
 
-        logger.info("Created agent instance: %s (model: %s)", name, model_id)
+        agent = Agent(**kwargs)
+
+        logger.info("Created agent instance: %s (model: %s, callback: %s)",
+                    name, model_id, "yes" if callback_handler else "no")
         return agent

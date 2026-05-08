@@ -640,8 +640,11 @@ class Orchestrator:
             task_queue.update_task_stage(plan.task_id, dashboard_stage)
             task_queue.append_task_event(plan.task_id, "agent", f"Agent '{agent_name}' executing", phase=dashboard_stage)
 
+            # Create callback to stream agent brain events to portal CoT
+            callback = DashboardCallback(task_id=plan.task_id)
+
             try:
-                agent = self._registry.create_agent(agent_name)
+                agent = self._registry.create_agent(agent_name, callback_handler=callback)
             except KeyError as e:
                 logger.error("Agent not found: %s", e)
                 results.append({

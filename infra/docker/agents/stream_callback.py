@@ -38,71 +38,108 @@ _MAX_BUFFER_SIZE = 10
 class DashboardCallback:
     """Strands callback handler that emits reasoning events to DynamoDB.
 
+    Implements __call__(**kwargs) to match the Strands SDK callback interface.
+    The SDK calls this with kwargs containing:
+    - reasoningText: model's chain-of-thought reasoning
+    - data: text content chunks
+    - complete: whether this is the final chunk
+    - event: raw model stream event (tool invocations in contentBlockStart)
+
     Captures:
-    - Tool invocations (tool name + first 100 chars of result)
+    - Tool invocations (tool name from contentBlockStart events)
     - Key reasoning markers (## headers, decisions, errors)
     - Phase transitions (Phase 3.a, 3.b, etc.)
 
     Does NOT capture:
     - Every text token (too noisy, too expensive)
     - Full tool outputs (too large)
-    - Internal chain-of-thought (security: may contain secrets)
+    - Raw reasoning text (security: may reference code or secrets)
     """
 
     task_id: str
     _buffer: list = field(default_factory=list, init=False)
     _last_flush: float = field(default=0.0, init=False)
     _tool_count: int = field(default=0, init=False)
+    _text_accumulator: str = field(default="", init=False)
 
-    def on_tool_start(self, tool_name: str, tool_input: dict) -> None:
-        """Called when the agent invokes a tool."""
+    def __call__(self, **kwargs) -> None:
+        """Strands SDK callback entry point.
+
+        Routes incoming events to appropriate handlers based on kwargs content.
+        """
+        reasoning_text = kwargs.get("reasoningText", "")
+        data = kwargs.get("data", "")
+        complete = kwargs.get("complete", False)
+        event = kwargs.get("event", {})
+
+        # Handle tool invocation start
+        tool_use = (
+            event.get("contentBlockStart", {})
+            .get("start", {})
+            .get("toolUse")
+        )
+        if tool_use:
+            self._handle_tool_start(tool_use)
+
+        # Handle reasoning text (model's thinking — summarize, don't expose raw)
+        if reasoning_text:
+            self._handle_reasoning(reasoning_text)
+
+        # Handle text data (agent's output — capture structural markers)
+        if data:
+            self._handle_text(data)
+
+        # On completion, flush any remaining buffer
+        if complete:
+            self._handle_complete()
+
+    def _handle_tool_start(self, tool_use: dict) -> None:
+        """Handle a tool invocation event."""
         self._tool_count += 1
-        # Summarize the tool call (don't expose full input — may contain secrets)
+        tool_name = tool_use.get("name", "unknown")
         summary = f"Tool #{self._tool_count}: {tool_name}"
-        if tool_name == "run_shell_command":
-            cmd = tool_input.get("command", "")[:80]
-            summary = f"Tool #{self._tool_count}: $ {cmd}"
-        elif tool_name in ("update_github_issue", "create_github_pull_request"):
-            summary = f"Tool #{self._tool_count}: {tool_name}"
-        elif tool_name == "write_artifact":
-            name = tool_input.get("artifact_name", "")[:40]
-            summary = f"Tool #{self._tool_count}: write_artifact({name})"
-
-        self._buffer.append({"type": "tool", "msg": summary})
+        self._buffer.append({"type": "tool", "msg": summary[:200]})
         self._maybe_flush()
 
-    def on_tool_end(self, tool_name: str, tool_output: str) -> None:
-        """Called when a tool returns its result."""
-        # Only capture notable outcomes (pass/fail signals)
-        output_lower = (tool_output or "")[:500].lower()
-        if "error" in output_lower or "failed" in output_lower:
-            self._buffer.append({"type": "error", "msg": f"{tool_name}: {tool_output[:150]}"})
-            self._maybe_flush(force=True)
-        elif "pass" in output_lower or "success" in output_lower:
-            # Summarize test results
-            if "test" in tool_name.lower() or "pytest" in output_lower:
-                self._buffer.append({"type": "system", "msg": f"Tests: {tool_output[:150]}"})
-                self._maybe_flush()
+    def _handle_reasoning(self, text: str) -> None:
+        """Handle reasoning text — capture key decision markers only."""
+        # Only capture lines with structural markers (not every thinking token)
+        for marker in ["decision:", "conclusion:", "approach:", "risk:", "gate:"]:
+            if marker in text.lower():
+                line = text.strip()[:200]
+                if line and len(line) > 15:
+                    self._buffer.append({"type": "agent", "msg": f"💭 {line}"})
+                    self._maybe_flush()
+                break
 
-    def on_text_chunk(self, text: str) -> None:
-        """Called for each text chunk from the model.
+    def _handle_text(self, data: str) -> None:
+        """Handle text output — capture structural markers."""
+        self._text_accumulator += data
 
-        We only capture structural markers, not every token.
-        """
         # Capture markdown headers (## Phase 3.b, ## Key Metrics, etc.)
-        if text.startswith("## ") or text.startswith("### "):
-            header = text.strip()[:100]
-            self._buffer.append({"type": "agent", "msg": header})
-            self._maybe_flush()
-        # Capture key decision markers
-        elif any(marker in text for marker in ["\u2705", "\u274c", "COMPLETE", "FAILED", "BLOCKED"]):
-            line = text.strip()[:150]
-            if line and len(line) > 10:
-                self._buffer.append({"type": "agent", "msg": line})
-                self._maybe_flush()
+        if "\n" in self._text_accumulator:
+            lines = self._text_accumulator.split("\n")
+            self._text_accumulator = lines[-1]  # Keep incomplete last line
 
-    def on_agent_end(self, result: str) -> None:
-        """Called when the agent finishes execution."""
+            for line in lines[:-1]:
+                stripped = line.strip()
+                if stripped.startswith("## ") or stripped.startswith("### "):
+                    self._buffer.append({"type": "agent", "msg": stripped[:150]})
+                    self._maybe_flush()
+                elif any(m in stripped for m in ["✅", "❌", "COMPLETE", "FAILED", "BLOCKED", "PASS", "ERROR"]):
+                    if len(stripped) > 10:
+                        self._buffer.append({"type": "agent", "msg": stripped[:150]})
+                        self._maybe_flush()
+
+    def _handle_complete(self) -> None:
+        """Handle completion — flush remaining buffer."""
+        # Process any remaining accumulated text
+        if self._text_accumulator.strip():
+            stripped = self._text_accumulator.strip()
+            if stripped.startswith("## ") or stripped.startswith("### "):
+                self._buffer.append({"type": "agent", "msg": stripped[:150]})
+            self._text_accumulator = ""
+
         self._buffer.append({"type": "system", "msg": "Agent execution complete"})
         self._flush()
 
@@ -121,11 +158,14 @@ class DashboardCallback:
 
         # Write each buffered event (append_task_event handles non-blocking)
         for event in self._buffer:
-            task_queue.append_task_event(
-                self.task_id,
-                event.get("type", "info"),
-                event.get("msg", ""),
-            )
+            try:
+                task_queue.append_task_event(
+                    self.task_id,
+                    event.get("type", "info"),
+                    event.get("msg", ""),
+                )
+            except Exception as e:
+                logger.warning("Failed to write callback event: %s", e)
 
         self._buffer.clear()
         self._last_flush = time.time()
