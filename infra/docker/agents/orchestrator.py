@@ -41,7 +41,7 @@ from .status_sync import StatusSync
 from .stream_callback import DashboardCallback
 from .squad_composer import (
     should_use_dynamic_squad, compose_default_squad, compose_from_manifest_json,
-    SquadManifest, AGENT_CAPABILITIES,
+    SquadManifest, AGENT_CAPABILITIES, get_model_for_agent,
 )
 from .squad_context import SquadContext, create_squad_context
 from .squad_prompts import SQUAD_PROMPTS
@@ -611,10 +611,12 @@ class Orchestrator:
 
                 # Register transient agent definition
                 agent_name = f"{agent_role}-{task_id}"
+                model_id = get_model_for_agent(agent_role)
                 defn = AgentDefinition(
                     name=agent_name,
                     system_prompt=full_prompt,
                     tools=tools,
+                    model_id=model_id,
                     description=f"Squad {agent_role} for task {task_id}",
                 )
                 self._registry.register(defn)

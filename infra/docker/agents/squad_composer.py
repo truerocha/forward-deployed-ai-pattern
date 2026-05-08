@@ -103,27 +103,60 @@ class SquadManifest:
 # ─── Capability Registry ────────────────────────────────────────
 
 AGENT_CAPABILITIES: dict[str, dict[str, Any]] = {
-    "task-intake-eval-agent": {"layer": "quarteto", "tools": "RECON_TOOLS", "description": "Analyzes task, determines complexity, composes squad"},
-    "architect-standard-agent": {"layer": "quarteto", "tools": "RECON_TOOLS", "description": "Validates architecture decisions and component boundaries"},
-    "reviewer-security-agent": {"layer": "quarteto", "tools": "RECON_TOOLS", "description": "Security review: threat model, OWASP, secrets"},
-    "fde-code-reasoning": {"layer": "quarteto", "tools": "ENGINEERING_TOOLS", "description": "Deep code reasoning for refactoring"},
-    "code-ops-agent": {"layer": "waf", "pillar": "operational_excellence", "tools": "RECON_TOOLS", "description": "OPS: logging, monitoring, runbooks"},
-    "code-sec-agent": {"layer": "waf", "pillar": "security", "tools": "RECON_TOOLS", "description": "SEC: IAM, encryption, network isolation"},
-    "code-rel-agent": {"layer": "waf", "pillar": "reliability", "tools": "RECON_TOOLS", "description": "REL: error handling, retries, circuit breakers"},
-    "code-perf-agent": {"layer": "waf", "pillar": "performance_efficiency", "tools": "RECON_TOOLS", "description": "PERF: caching, pooling, async"},
-    "code-cost-agent": {"layer": "waf", "pillar": "cost_optimization", "tools": "RECON_TOOLS", "description": "COST: right-sizing, spot, reserved"},
-    "code-sus-agent": {"layer": "waf", "pillar": "sustainability", "tools": "RECON_TOOLS", "description": "SUS: efficient algorithms, minimal resources"},
-    "swe-issue-code-reader-agent": {"layer": "swe", "tools": "RECON_TOOLS", "description": "Reads issue, related code, and existing tests"},
-    "swe-code-context-agent": {"layer": "swe", "tools": "RECON_TOOLS", "description": "Maps codebase: dependencies, call graphs, modules"},
-    "swe-developer-agent": {"layer": "swe", "tools": "ENGINEERING_TOOLS", "description": "Writes new code: features, implementations"},
-    "swe-architect-agent": {"layer": "swe", "tools": "RECON_TOOLS", "description": "Designs component structure, interfaces, data models"},
-    "swe-code-quality-agent": {"layer": "swe", "tools": "RECON_TOOLS", "description": "Linting, coverage, code smells, DRY/SOLID"},
-    "swe-adversarial-agent": {"layer": "swe", "tools": "RECON_TOOLS", "description": "Challenges implementation: edge cases, failures"},
-    "swe-redteam-agent": {"layer": "swe", "tools": "RECON_TOOLS", "description": "Attacks implementation: injection, escalation, leaks"},
-    "swe-tech-writer-agent": {"layer": "delivery", "tools": "ENGINEERING_TOOLS", "description": "Updates repo docs: README, CHANGELOG, ADRs"},
-    "swe-dtl-commiter-agent": {"layer": "delivery", "tools": "ENGINEERING_TOOLS", "description": "Commits with FDE Squad Leader identity"},
-    "reporting-agent": {"layer": "reporting", "tools": "REPORTING_TOOLS", "description": "Writes completion report, updates ALM"},
+    # Quarteto (Control Plane) — Sonnet 4 for better instruction following
+    "task-intake-eval-agent": {"layer": "quarteto", "tools": "RECON_TOOLS", "model": "standard", "description": "Analyzes task, determines complexity, composes squad"},
+    "architect-standard-agent": {"layer": "quarteto", "tools": "RECON_TOOLS", "model": "reasoning", "description": "Validates architecture decisions and component boundaries"},
+    "reviewer-security-agent": {"layer": "quarteto", "tools": "RECON_TOOLS", "model": "reasoning", "description": "Security review: threat model, OWASP, secrets"},
+    "fde-code-reasoning": {"layer": "quarteto", "tools": "ENGINEERING_TOOLS", "model": "reasoning", "description": "Deep code reasoning for refactoring"},
+    # WAF Pillar Agents — Standard (focused review, not implementation)
+    "code-ops-agent": {"layer": "waf", "pillar": "operational_excellence", "tools": "RECON_TOOLS", "model": "standard", "description": "OPS: logging, monitoring, runbooks"},
+    "code-sec-agent": {"layer": "waf", "pillar": "security", "tools": "RECON_TOOLS", "model": "reasoning", "description": "SEC: IAM, encryption, network isolation"},
+    "code-rel-agent": {"layer": "waf", "pillar": "reliability", "tools": "RECON_TOOLS", "model": "standard", "description": "REL: error handling, retries, circuit breakers"},
+    "code-perf-agent": {"layer": "waf", "pillar": "performance_efficiency", "tools": "RECON_TOOLS", "model": "standard", "description": "PERF: caching, pooling, async"},
+    "code-cost-agent": {"layer": "waf", "pillar": "cost_optimization", "tools": "RECON_TOOLS", "model": "fast", "description": "COST: right-sizing, spot, reserved"},
+    "code-sus-agent": {"layer": "waf", "pillar": "sustainability", "tools": "RECON_TOOLS", "model": "fast", "description": "SUS: efficient algorithms, minimal resources"},
+    # SWE Agents (Execution) — Developer uses reasoning, readers use standard
+    "swe-issue-code-reader-agent": {"layer": "swe", "tools": "RECON_TOOLS", "model": "standard", "description": "Reads issue, related code, and existing tests"},
+    "swe-code-context-agent": {"layer": "swe", "tools": "RECON_TOOLS", "model": "standard", "description": "Maps codebase: dependencies, call graphs, modules"},
+    "swe-developer-agent": {"layer": "swe", "tools": "ENGINEERING_TOOLS", "model": "reasoning", "description": "Writes new code: features, implementations"},
+    "swe-architect-agent": {"layer": "swe", "tools": "RECON_TOOLS", "model": "reasoning", "description": "Designs component structure, interfaces, data models"},
+    "swe-code-quality-agent": {"layer": "swe", "tools": "RECON_TOOLS", "model": "standard", "description": "Linting, coverage, code smells, DRY/SOLID"},
+    "swe-adversarial-agent": {"layer": "swe", "tools": "RECON_TOOLS", "model": "reasoning", "description": "Challenges implementation: edge cases, failures"},
+    "swe-redteam-agent": {"layer": "swe", "tools": "RECON_TOOLS", "model": "reasoning", "description": "Attacks implementation: injection, escalation, leaks"},
+    # Delivery Agents — Standard (git ops, docs)
+    "swe-tech-writer-agent": {"layer": "delivery", "tools": "ENGINEERING_TOOLS", "model": "standard", "description": "Updates repo docs: README, CHANGELOG, ADRs"},
+    "swe-dtl-commiter-agent": {"layer": "delivery", "tools": "ENGINEERING_TOOLS", "model": "fast", "description": "Commits with FDE Squad Leader identity"},
+    # Reporting — Fast (structured output, no reasoning needed)
+    "reporting-agent": {"layer": "reporting", "tools": "REPORTING_TOOLS", "model": "fast", "description": "Writes completion report, updates ALM"},
 }
+
+# Model tier mapping — resolved at runtime from env vars
+# Allows override via BEDROCK_MODEL_REASONING, BEDROCK_MODEL_STANDARD, BEDROCK_MODEL_FAST
+MODEL_TIERS: dict[str, str] = {
+    "reasoning": os.environ.get("BEDROCK_MODEL_REASONING", "us.anthropic.claude-sonnet-4-20250514-v1:0"),
+    "standard": os.environ.get("BEDROCK_MODEL_STANDARD", "us.anthropic.claude-sonnet-4-5-20250929-v1:0"),
+    "fast": os.environ.get("BEDROCK_MODEL_FAST", "us.anthropic.claude-haiku-4-5-20251001-v1:0"),
+}
+
+
+def get_model_for_agent(agent_role: str) -> str:
+    """Resolve the Bedrock model ID for a given agent role.
+
+    Model routing strategy:
+    - reasoning: Claude Sonnet 4 — best instruction following, extended thinking with tools
+      Used by: developer, architect, adversarial, redteam, security, code-reasoning
+    - standard: Claude Sonnet 4.5 — best for coding and agents
+      Used by: intake-eval, issue-reader, code-context, quality, ops, rel, perf, tech-writer
+    - fast: Claude Haiku 4.5 — fastest, cheapest, sufficient for structured output
+      Used by: dtl-commiter, reporting, cost, sustainability
+
+    Returns:
+        Bedrock model ID string.
+    """
+    capability = AGENT_CAPABILITIES.get(agent_role, {})
+    tier = capability.get("model", "standard")
+    model_id = MODEL_TIERS.get(tier, MODEL_TIERS["standard"])
+    return model_id
 
 _MAX_SQUAD_SIZE = 8
 
