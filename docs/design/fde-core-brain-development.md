@@ -62,9 +62,9 @@ This document merges four complementary inputs into a single coherent, deploymen
 | 1.26 | Implement net_friction_calculator.py (O14) | `src/core/metrics/net_friction_calculator.py` | CREATE | 1.05 | ✅ |
 | 1.27 | Implement trust_metrics.py (O17) | `src/core/metrics/trust_metrics.py` | CREATE | 1.05 | ✅ |
 | 1.28 | Implement learning_curve_tracker.py (O23) | `src/core/metrics/learning_curve_tracker.py` | CREATE | 1.05 | ✅ |
-| 1.29 | Terraform apply + smoke test | `infra/terraform/` (all modules) | DEPLOY | 1.01-1.10 | ☐ |
-| 1.30 | Integration test: orchestrator dispatches agent | `tests/integration/test_distributed_orchestration.py` | CREATE | 1.11, 1.12, 1.29 | ☐ |
-| 1.31 | Integration test: gate feedback format | `tests/integration/test_gate_feedback.py` | CREATE | 1.24, 1.25 | ☐ |
+| 1.29 | Terraform apply + smoke test | `infra/terraform/` (all modules) | DEPLOY | 1.01-1.10 | ⏳ |
+| 1.30 | Integration test: orchestrator dispatches agent | `tests/integration/test_distributed_orchestration.py` | CREATE | 1.11, 1.12, 1.29 | ✅ |
+| 1.31 | Integration test: gate feedback format | `tests/integration/test_gate_feedback.py` | CREATE | 1.24, 1.25 | ✅ |
 
 ### Wave 2: Brain Sim Core
 
