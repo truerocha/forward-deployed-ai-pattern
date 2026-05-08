@@ -119,11 +119,11 @@ This document merges four complementary inputs into a single coherent, deploymen
 
 | Seq | Activity | Artifact (path) | Change Type | Depends On | Tracking |
 |-----|----------|-----------------|-------------|------------|----------|
-| 4.01 | Create API Gateway WebSocket Terraform | `infra/terraform/modules/apigw_ws/main.tf` | CREATE | 1.24 (Wave 1 deployed) | ☐ |
-| 4.02 | Implement ws_handler.py (Lambda) | `src/api/ws_handler.py` | CREATE | 4.01 | ☐ |
-| 4.03 | Implement human_input_tool.py | `src/tools/human_input_tool.py` | CREATE | 4.02 | ☐ |
-| 4.04 | Update autonomy.py (L2/L3 gating for HITL) | `src/core/autonomy.py` | MODIFY | 4.03 | ☐ |
-| 4.05 | Implement events.py (streaming event types) | `src/api/events.py` | CREATE | 4.02 | ☐ |
+| 4.01 | Create API Gateway WebSocket Terraform | `infra/terraform/modules/apigw_ws/main.tf` | CREATE | 1.24 (Wave 1 deployed) | ✅ |
+| 4.02 | Implement ws_handler.py (Lambda) | `src/api/ws_handler.py` | CREATE | 4.01 | ✅ |
+| 4.03 | Implement human_input_tool.py | `src/tools/human_input_tool.py` | CREATE | 4.02 | ✅ |
+| 4.04 | Update autonomy.py (L2/L3 gating for HITL) | `src/core/autonomy.py` | MODIFY | 4.03 | ✅ |
+| 4.05 | Implement events.py (streaming event types) | `src/api/events.py` | CREATE | 4.02 | ✅ |
 | 4.06 | Terraform apply WebSocket API | `infra/terraform/modules/apigw_ws/` | DEPLOY | 4.01, 4.02 | ☐ |
 | 4.07 | Implement Portal: LiveTimeline.tsx | `infra/portal-src/components/LiveTimeline.tsx` | CREATE | 4.05, 4.06 | ☐ |
 | 4.08 | Implement Portal: HumanInputCard.tsx | `infra/portal-src/components/HumanInputCard.tsx` | CREATE | 4.03, 4.06 | ☐ |
