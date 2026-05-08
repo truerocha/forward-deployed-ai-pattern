@@ -99,18 +99,18 @@ This document merges four complementary inputs into a single coherent, deploymen
 | 3.10 | Implement semantic_store.py (Bedrock KB) | `src/core/memory/semantic_store.py` | CREATE | 3.09, 3.16 | ✅ |
 | 3.11 | Implement context_engineer.py | `src/core/memory/context_engineer.py` | CREATE | 3.09, 3.10 | ✅ |
 | 3.12 | Create memory migration script | `scripts/migrate_memory.py` | CREATE | 3.09 | ✅ |
-| 3.13 | Implement system_maturity_scorer.py (DORA 7-cap) | `src/core/governance/system_maturity_scorer.py` | CREATE | 1.05 (metrics table) | ☐ |
-| 3.14 | Implement gate_optimizer.py | `src/core/governance/gate_optimizer.py` | CREATE | 1.05 (metrics table) | ☐ |
+| 3.13 | Implement system_maturity_scorer.py (DORA 7-cap) | `src/core/governance/system_maturity_scorer.py` | CREATE | 1.05 (metrics table) | ✅ |
+| 3.14 | Implement gate_optimizer.py | `src/core/governance/gate_optimizer.py` | CREATE | 1.05 (metrics table) | ✅ |
 | 3.15 | Update repo_onboarding_agent (maturity + archetype) | `src/agents/onboarding/repo_onboarding_agent.py` | MODIFY | 3.13 | ☐ |
 | 3.16 | Create Bedrock KB Terraform module | `infra/terraform/modules/bedrock_kb/main.tf` | CREATE | Pre-flight (model access) | ☐ |
 | 3.17 | Terraform apply Bedrock KB | `infra/terraform/modules/bedrock_kb/` | DEPLOY | 3.16 | ☐ |
 | 3.18 | Run memory migration | `scripts/migrate_memory.py` (execute) | EXECUTE | 3.12, 3.17 | ☐ |
-| 3.19 | Implement happy_time_metric.py (O18) | `src/core/metrics/happy_time_metric.py` | CREATE | 1.16 (vsm_tracker) | ☐ |
-| 3.20 | Implement unified gate output schema (O20) | All hook prompts + `src/core/governance/gate_output_schema.py` | CREATE+MODIFY | 1.24 | ☐ |
-| 3.21 | Write training guide: effective-specs.md (O22) | `docs/training/effective-specs.md` | CREATE | None | ☐ |
-| 3.22 | Write training guide: understanding-gates.md (O22) | `docs/training/understanding-gates.md` | CREATE | 1.24 | ☐ |
-| 3.23 | Write training: onboarding-checklist.md (O22) | `docs/training/onboarding-checklist.md` | CREATE | 3.21, 3.22 | ☐ |
-| 3.24 | Add learning_mode to Squad Manifest schema (O16) | `src/core/orchestration/squad_manifest.py` | MODIFY | 2.06 | ☐ |
+| 3.19 | Implement happy_time_metric.py (O18) | `src/core/metrics/happy_time_metric.py` | CREATE | 1.16 (vsm_tracker) | ✅ |
+| 3.20 | Implement unified gate output schema (O20) | All hook prompts + `src/core/governance/gate_output_schema.py` | CREATE+MODIFY | 1.24 | ✅ |
+| 3.21 | Write training guide: effective-specs.md (O22) | `docs/training/effective-specs.md` | CREATE | None | ✅ |
+| 3.22 | Write training guide: understanding-gates.md (O22) | `docs/training/understanding-gates.md` | CREATE | 1.24 | ✅ |
+| 3.23 | Write training: onboarding-checklist.md (O22) | `docs/training/onboarding-checklist.md` | CREATE | 3.21, 3.22 | ✅ |
+| 3.24 | Add learning_mode to Squad Manifest schema (O16) | `src/core/orchestration/squad_manifest.py` | MODIFY | 2.06 | ✅ |
 | 3.25 | Integration test: knowledge pipeline | `tests/integration/test_knowledge_pipeline.py` | CREATE | 3.01-3.06 | ☐ |
 | 3.26 | Integration test: memory recall | `tests/integration/test_memory_recall.py` | CREATE | 3.09-3.11, 3.18 | ☐ |
 | 3.27 | Integration test: maturity scoring | `tests/integration/test_maturity_scorer.py` | CREATE | 3.13, 3.15 | ☐ |
