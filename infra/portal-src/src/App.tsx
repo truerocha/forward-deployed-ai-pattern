@@ -8,35 +8,27 @@ import {
   Zap,
   Sun,
   Moon,
-  Send,
-  Database
+  Database,
+  GitBranch,
+  CheckCircle2,
+  Clock,
+  AlertCircle
 } from 'lucide-react';
 import { AgentSidebar } from './components/AgentSidebar';
 import { Terminal } from './components/Terminal';
-import { CodePreview } from './components/CodePreview';
 import { Header } from './components/Header';
 import { MetricsCard } from './components/MetricsCard';
 import { ComponentHealthCard } from './components/ComponentHealthCard';
 import { RegistriesCard } from './components/RegistriesCard';
 import { BranchEvaluationCard } from './components/BranchEvaluationCard';
 import { Agent, LogEntry, AppView } from './types';
-import { runAgentStep, AgentRole } from './services/factoryService';
 import factoryConfig from './factory-config.json';
 import { useTranslation } from 'react-i18next';
 
-const INITIAL_AGENTS: Agent[] = [
-  { id: '1', name: 'Factory Orchestrator', role: 'planner', status: 'idle' },
-  { id: '2', name: 'Forward Engineer A', role: 'coder', status: 'idle' },
-  { id: '3', name: 'Autonomous Reviewer', role: 'reviewer', status: 'idle' },
-];
-
 export default function App() {
   const { t, i18n } = useTranslation();
-  const [agents, setAgents] = useState<Agent[]>(INITIAL_AGENTS);
+  const [agents, setAgents] = useState<Agent[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [prompt, setPrompt] = useState('');
-  const [output, setOutput] = useState<string | undefined>();
-  const [isProcessing, setIsProcessing] = useState(false);
   const [activeView, setActiveView] = useState<AppView>('pipeline');
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [apiStatus, setApiStatus] = useState<any>(null);
@@ -60,7 +52,7 @@ export default function App() {
     }
   }, [API_URL]);
 
-  // Fetch real factory data (tasks, metrics, etc)
+  // Fetch real factory data (tasks, metrics, agents, events)
   const fetchFactoryData = useCallback(async () => {
     if (!API_URL) return;
     try {
@@ -68,6 +60,21 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         setFactoryData(data);
+
+        // Hydrate agents from API data
+        if (data.agents && data.agents.length > 0) {
+          const realAgents: Agent[] = data.agents.slice(0, 10).map((a: any) => ({
+            id: a.instance_id,
+            name: a.name || 'fde-pipeline',
+            role: 'coder' as const,
+            status: a.status === 'RUNNING' ? 'working' :
+                    a.status === 'COMPLETED' ? 'complete' :
+                    a.status === 'CREATED' ? 'idle' : 'idle',
+            lastMessage: a.task_id ? `Task: ${a.task_id}` : undefined,
+            progress: a.status === 'RUNNING' ? 50 : a.status === 'COMPLETED' ? 100 : 0,
+          }));
+          setAgents(realAgents);
+        }
 
         // Hydrate reasoning logs from API events (survives page refresh)
         if (data.tasks && data.tasks.length > 0) {
@@ -89,14 +96,7 @@ export default function App() {
               }
             }
           }
-          if (apiLogs.length > 0) {
-            setLogs(prev => {
-              // Merge: keep API logs + any locally-generated logs not from API
-              const apiIds = new Set(apiLogs.map(l => l.id));
-              const localOnly = prev.filter(l => !apiIds.has(l.id));
-              return [...apiLogs, ...localOnly];
-            });
-          }
+          setLogs(apiLogs);
         }
       }
     } catch (err) {
@@ -119,7 +119,7 @@ export default function App() {
   useEffect(() => {
     const handleHash = () => {
       const hash = window.location.hash.replace('#', '') as AppView;
-      if (['pipeline', 'agents', 'reasoning', 'gates', 'health'].includes(hash)) {
+      if (['pipeline', 'agents', 'reasoning', 'gates', 'health', 'registries'].includes(hash)) {
         setActiveView(hash);
       }
     };
@@ -133,107 +133,11 @@ export default function App() {
     setActiveView(view);
   };
 
-  const addLog = useCallback((agentId: string, message: string, type: LogEntry['type']) => {
-    setLogs(prev => [...prev, {
-      id: Math.random().toString(36).substr(2, 9),
-      timestamp: new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-      agentId,
-      agentName: INITIAL_AGENTS.find(a => a.id === agentId)?.name || 'System',
-      message: message.substring(0, 1000),
-      type
-    }]);
-
-    setAgents(prev => prev.map(a => a.id === agentId ? { 
-      ...a, 
-      status: type === 'working' ? 'working' : (type === 'action' ? 'thinking' : (type === 'complete' ? 'complete' : (type === 'thought' ? 'thinking' : a.status))), 
-      lastMessage: message.substring(0, 50) + (message.length > 50 ? '...' : '')
-    } : a));
-  }, []);
-
-  const provisionAgent = async (agentId: string) => {
-    const agentName = INITIAL_AGENTS.find(a => a.id === agentId)?.name || 'Agent';
-    
-    setAgents(prev => prev.map(a => a.id === agentId ? { ...a, status: 'intake', lastMessage: 'Intake initiated...' } : a));
-    addLog('system', `Factory orchestrator authorized intake for ${agentName}`, 'system');
-    await new Promise(r => setTimeout(r, 600));
-
-    setAgents(prev => prev.map(a => a.id === agentId ? { ...a, status: 'provisioning', progress: 0 } : a));
-    for (let i = 0; i <= 60; i += 20) {
-      if (!isTabActive.current) await new Promise(r => {
-        const check = setInterval(() => {
-          if (isTabActive.current) {
-            clearInterval(check);
-            r(null);
-          }
-        }, 1000);
-      });
-      setAgents(prev => prev.map(a => a.id === agentId ? { ...a, progress: i } : a));
-      await new Promise(r => setTimeout(r, 200));
-    }
-    
-    setAgents(prev => prev.map(a => a.id === agentId ? { ...a, status: 'setup', lastMessage: 'Configuring workspace...' } : a));
-    addLog(agentId, 'Hydrating environment variables and AWS contexts...', 'thought');
-    for (let i = 61; i <= 100; i += 13) {
-      setAgents(prev => prev.map(a => a.id === agentId ? { ...a, progress: Math.min(i, 100) } : a));
-      await new Promise(r => setTimeout(r, 150));
-    }
-    
-    addLog(agentId, 'Provisioning successful. Agent onboarded to Cloud Mesh.', 'action');
-    setAgents(prev => prev.map(a => a.id === agentId ? { ...a, status: 'thinking', progress: 100 } : a));
-  };
-
-  const startFactory = async () => {
-    if (!prompt.trim() || isProcessing) return;
-    setIsProcessing(true);
-    setLogs([]);
-    setOutput(undefined);
-    setAgents(INITIAL_AGENTS);
-    changeView('pipeline');
-    
-    addLog('system', `Factory intake initiated for project ${factoryConfig.project_id}...`, 'system');
-    await new Promise(r => setTimeout(r, 600));
-
-    try {
-      await provisionAgent('1');
-      const plan = await runAgentStep('planner', prompt);
-      plan.thoughts.forEach(t => addLog('1', t, 'thought'));
-      addLog('1', plan.message, 'action');
-
-      await provisionAgent('2');
-      addLog('2', 'Initializing workspace for target implementation...', 'working');
-      
-      const codeResult = await runAgentStep('coder', prompt, plan.message);
-      codeResult.thoughts.forEach(t => addLog('2', t, 'thought'));
-      if (codeResult.code) {
-        const header = `/**\n * Generated by CODE_FACTORY (AWS ProServe Style)\n * FDE Pattern: Autonomous Workflow\n * Project: ${factoryConfig.project_id}\n * VPC: ${factoryConfig.vpc}\n */\n\n`;
-        setOutput(header + codeResult.code);
-      }
-      addLog('2', codeResult.message, 'action');
-
-      await provisionAgent('3');
-      const reviewResult = await runAgentStep('reviewer', prompt, codeResult.code || codeResult.message);
-      reviewResult.thoughts.forEach(t => addLog('3', t, 'thought'));
-      addLog('3', reviewResult.message, reviewResult.message.toLowerCase().includes('fail') ? 'error' : 'complete');
-      
-    } catch (err) {
-      addLog('system', `Factory Workflow Stalled: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
+  // Polling: real API data only
   useEffect(() => {
     let pollingInterval: NodeJS.Timeout;
-    const refreshData = () => {
-      if (document.hidden) return;
-      const rand = Math.random();
-      if (rand > 0.8) {
-        addLog('system', `Telemetry check: us-east-1a node throughput ${Math.floor(Math.random() * 100)}k tps`, 'system');
-      }
-    };
     const startPolling = () => {
       pollingInterval = setInterval(() => {
-        refreshData();
         fetchHealth();
         fetchFactoryData();
       }, 15000);
@@ -241,11 +145,8 @@ export default function App() {
     const handleVisibility = () => {
       isTabActive.current = !document.hidden;
       if (document.hidden) {
-        addLog('system', 'Factory monitor entering low-power standby.', 'system');
         clearInterval(pollingInterval);
       } else {
-        addLog('system', 'Factory monitor resyncing with Cloud Mesh.', 'system');
-        refreshData();
         startPolling();
       }
     };
@@ -255,7 +156,7 @@ export default function App() {
       document.removeEventListener('visibilitychange', handleVisibility);
       clearInterval(pollingInterval);
     };
-  }, [addLog]);
+  }, [fetchHealth, fetchFactoryData]);
 
   const RailItem = ({ view, icon: Icon, label }: { view: AppView, icon: any, label: string }) => (
     <button 
@@ -269,6 +170,11 @@ export default function App() {
       <span className="rail-label">{label}</span>
     </button>
   );
+
+  // Pipeline view: real task cards from API
+  const tasks = factoryData?.tasks || [];
+  const metrics = factoryData?.metrics || {};
+  const isProcessing = metrics.active > 0;
 
   return (
     <div className="h-screen w-screen bg-bg-main flex overflow-hidden font-sans transition-colors duration-300">
@@ -328,35 +234,74 @@ export default function App() {
 
         <main id="main-content" className="flex-1 flex flex-col overflow-hidden">
           {activeView === 'pipeline' && (
-            <div className="flex-1 flex flex-col gap-4 overflow-hidden">
-              <div className="flex-1 overflow-hidden">
-                <CodePreview content={output} />
-              </div>
-              <div className="h-20 flex items-center gap-3 bg-bg-card border border-border-main rounded-2xl px-5 shrink-0 transition-colors duration-300 shadow-2xl">
-                <div className="flex-1 relative">
-                  <div className="absolute left-0 top-1/2 -translate-y-1/2 text-aws-orange/40">
-                    <Cpu className="w-5 h-5 animate-pulse" aria-hidden="true" />
-                  </div>
-                  <input 
-                    type="text" 
-                    value={prompt}
-                    onChange={(e) => setPrompt(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && !isProcessing && startFactory()}
-                    placeholder={t('pipeline.placeholder')} 
-                    aria-label="Architectural instruction prompt"
-                    className="w-full bg-transparent border-none pl-8 pr-4 py-3 text-sm focus:outline-none transition-all text-dynamic placeholder:text-text-secondary"
-                  />
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <div className="flex justify-between items-center mb-6">
+                <div>
+                  <h2 className="text-xl font-medium text-dynamic">{t('pipeline.title')}</h2>
+                  <p className="text-xs text-secondary-dynamic font-mono">{t('pipeline.subtitle')}</p>
                 </div>
-                <div className="h-8 w-[1px] bg-border-main"></div>
-                <button 
-                  onClick={startFactory}
-                  disabled={isProcessing || !prompt.trim()}
-                  aria-label={isProcessing ? t('pipeline.processing') : t('pipeline.interact')}
-                  className="flex items-center gap-2 px-6 py-2.5 bg-aws-orange hover:bg-orange-500 disabled:opacity-50 rounded-xl text-sm font-bold transition-all text-white shadow-lg shadow-orange-500/10 uppercase tracking-widest shrink-0"
-                >
-                  <Send className="w-4 h-4" aria-hidden="true" />
-                  {isProcessing ? t('pipeline.processing') : t('pipeline.interact')}
-                </button>
+                <div className="flex gap-3 text-[10px] font-mono">
+                  <span className="px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    Active: {metrics.active || 0}
+                  </span>
+                  <span className="px-2 py-1 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                    Completed 24h: {metrics.completed_24h || 0}
+                  </span>
+                  <span className="px-2 py-1 rounded bg-red-500/10 text-red-400 border border-red-500/20">
+                    Failed 24h: {metrics.failed_24h || 0}
+                  </span>
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto pr-2 scrollbar-thin space-y-3">
+                {tasks.length === 0 && (
+                  <div className="h-full flex items-center justify-center flex-col gap-3 opacity-40">
+                    <Play className="w-10 h-10" />
+                    <p className="text-sm font-mono uppercase tracking-widest">{t('pipeline.awaiting_signal')}</p>
+                  </div>
+                )}
+                {tasks.map((task: any) => (
+                  <div key={task.task_id} className="bg-black/5 dark:bg-black/30 border border-border-main rounded-xl p-4 hover:border-aws-orange/30 transition-all">
+                    <div className="flex justify-between items-start mb-2">
+                      <div className="flex items-center gap-2">
+                        {task.status === 'running' || task.status === 'IN_PROGRESS' ? (
+                          <div className="w-2 h-2 rounded-full bg-aws-orange animate-pulse" />
+                        ) : task.status === 'completed' || task.status === 'COMPLETED' ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                        ) : task.status === 'failed' || task.status === 'FAILED' ? (
+                          <AlertCircle className="w-4 h-4 text-red-400" />
+                        ) : (
+                          <Clock className="w-4 h-4 text-slate-500" />
+                        )}
+                        <span className="text-xs font-bold text-dynamic">{task.title}</span>
+                      </div>
+                      <span className={`text-[9px] font-mono font-bold uppercase px-2 py-0.5 rounded ${
+                        task.status === 'running' || task.status === 'IN_PROGRESS' ? 'bg-aws-orange/20 text-aws-orange' :
+                        task.status === 'completed' || task.status === 'COMPLETED' ? 'bg-emerald-500/20 text-emerald-400' :
+                        task.status === 'failed' || task.status === 'FAILED' ? 'bg-red-500/20 text-red-400' :
+                        'bg-slate-500/20 text-slate-400'
+                      }`}>{task.current_stage || task.status}</span>
+                    </div>
+                    <div className="flex items-center gap-4 text-[10px] text-secondary-dynamic font-mono">
+                      <span className="flex items-center gap-1">
+                        <GitBranch className="w-3 h-3" /> {task.repo || 'unknown'}
+                      </span>
+                      <span>{task.task_id}</span>
+                      {task.pr_url && (
+                        <a href={task.pr_url} target="_blank" rel="noopener noreferrer" className="text-aws-orange hover:underline">PR</a>
+                      )}
+                      {task.issue_url && (
+                        <a href={task.issue_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Issue</a>
+                      )}
+                    </div>
+                    {task.stage_progress && (
+                      <div className="mt-2">
+                        <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+                          <div className="h-full bg-aws-orange rounded-full transition-all" style={{ width: `${task.stage_progress.percent || 0}%` }} />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
           )}
