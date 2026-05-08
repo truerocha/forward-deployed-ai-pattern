@@ -29,9 +29,9 @@ _USER_ROLE_PATTERNS = [
 ]
 
 _ACTION_PATTERNS = [
-    r"I\s+want\s+(?:to\s+)?(.+?)(?:,|\s+so\s+that)",
-    r"[Ss]hould\s+(?:be\s+able\s+to\s+)?(.+?)(?:\.|,)",
-    r"[Nn]eed(?:s)?\s+(?:to\s+)?(.+?)(?:\.|,)",
+    r"I\s+want\s+(?:to\s+)?(.+?)(?:,|\s+so\s+that|\.|$)",
+    r"[Ss]hould\s+(?:be\s+able\s+to\s+)?(.+?)(?:\.|,|$)",
+    r"[Nn]eed(?:s)?\s+(?:to\s+)?(.+?)(?:\.|,|$)",
 ]
 
 _VALUE_PATTERNS = [

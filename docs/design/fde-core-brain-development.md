@@ -78,10 +78,10 @@ This document merges four complementary inputs into a single coherent, deploymen
 | 2.06 | Create fde-fidelity-agent prompt | `src/agents/fidelity/prompt.md` | CREATE | 2.01-2.05 | ✅ |
 | 2.07 | Create fde-fidelity-agent ECS task def | `infra/terraform/modules/ecs/fidelity_agent_task_def.tf` | CREATE | 2.06, 1.09 | ✅ |
 | 2.08 | Implement user_value_validator.py (DORA C6) | `src/core/governance/user_value_validator.py` | CREATE | None | ✅ |
-| 2.09 | Update DoR gate hook (user value field) | `.kiro/hooks/fde-dor-gate.kiro.hook` | MODIFY | 2.08 | ☐ |
-| 2.10 | Update DoD gate hook (user story completion) | `.kiro/hooks/fde-dod-gate.kiro.hook` | MODIFY | 2.08 | ☐ |
-| 2.11 | Integration test: fidelity scoring pipeline | `tests/integration/test_fidelity_pipeline.py` | CREATE | 2.01-2.07 | ☐ |
-| 2.12 | Integration test: user value validation | `tests/integration/test_user_value_gates.py` | CREATE | 2.08-2.10 | ☐ |
+| 2.09 | Update DoR gate hook (user value field) | `.kiro/hooks/fde-dor-gate.kiro.hook` | MODIFY | 2.08 | ✅ |
+| 2.10 | Update DoD gate hook (user story completion) | `.kiro/hooks/fde-dod-gate.kiro.hook` | MODIFY | 2.08 | ✅ |
+| 2.11 | Integration test: fidelity scoring pipeline | `tests/integration/test_fidelity_pipeline.py` | CREATE | 2.01-2.07 | ✅ |
+| 2.12 | Integration test: user value validation | `tests/integration/test_user_value_gates.py` | CREATE | 2.08-2.10 | ✅ |
 
 ### Wave 3: Knowledge + Memory + Maturity
 
