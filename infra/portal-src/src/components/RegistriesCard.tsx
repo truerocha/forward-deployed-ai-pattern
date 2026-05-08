@@ -1,5 +1,5 @@
-import React from 'react';
-import { Database, Box, FileText, Cpu, CheckCircle2 } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Database, Box, FileText, Cpu, CheckCircle2, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 interface RegistryItem {
@@ -15,44 +15,111 @@ interface RegistryItem {
 
 export const RegistriesCard: React.FC = () => {
   const { t } = useTranslation();
-  const registries: RegistryItem[] = [
-    {
-      category: 'Model Registries',
-      icon: Cpu,
-      items: [
-        { name: 'Claude 3.5 Sonnet', version: 'v1.0', status: 'ready', details: 'us-east-1 / bedrock' },
-        { name: 'Claude 3 Opus', version: 'v1.0', status: 'ready', details: 'us-east-1 / bedrock' },
-        { name: 'Titan Text G1', version: 'v2.1', status: 'stable', details: 'Internal Embedding' },
-      ]
-    },
-    {
-      category: 'Agent Templates (ECS)',
-      icon: Box,
-      items: [
-        { name: 'fde-strands-agent', version: 'v6', status: 'ready', details: 'Fargate / 785640717688' },
-        { name: 'fde-onboarding-agent', version: 'v2', status: 'ready', details: 'Fargate / 785640717688' },
-        { name: 'fde-branch-eval-agent', version: 'v1', status: 'ready', details: 'CLI + GitHub Action' },
-        { name: 'fde-compliance-gate', version: 'v3', status: 'stable', details: 'Lambda / 785640717688' },
-      ]
-    },
-    {
-      category: 'Prompt Manifests',
-      icon: FileText,
-      items: [
-        { name: 'architect-standard', version: '2026.05', status: 'ready', details: 'DynamoDB: prompt-registry' },
-        { name: 'reviewer-security', version: '2026.04', status: 'ready', details: 'DynamoDB: prompt-registry' },
-        { name: 'coder-refactor-fde', version: '2026.05', status: 'ready', details: 'DynamoDB: prompt-registry' },
-      ]
-    },
-    {
-      category: 'Orchestration Rules',
-      icon: Database,
-      items: [
-        { name: 'github-factory-ready', version: 'EB-1', status: 'ready', details: 'EventBridge: fde-factory-bus' },
-        { name: 'asana-intake-sync', version: 'EB-2', status: 'ready', details: 'EventBridge: fde-factory-bus' },
-      ]
-    }
-  ];
+  const [registries, setRegistries] = useState<RegistryItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const API_URL = document.querySelector('meta[name="factory-api-url"]')?.getAttribute('content') || '';
+
+  useEffect(() => {
+    const buildRegistries = async () => {
+      const items: RegistryItem[] = [];
+
+      // Detect active squad agents from real task events
+      let detectedAgents: string[] = [];
+      if (API_URL) {
+        try {
+          const res = await fetch(`${API_URL}/status/tasks`);
+          if (res.ok) {
+            const data = await res.json();
+            const agentSet = new Set<string>();
+            for (const task of (data.tasks || [])) {
+              for (const ev of (task.events || [])) {
+                const match = ev.msg?.match(/Squad agent: (.+)/);
+                if (match) agentSet.add(match[1]);
+              }
+            }
+            detectedAgents = Array.from(agentSet);
+          }
+        } catch { /* fallback below */ }
+      }
+
+      // Squad Agents — from ADR-019 capability registry (20 agents)
+      const allSquadAgents = [
+        { name: 'task-intake-eval-agent', layer: 'Quarteto' },
+        { name: 'architect-standard-agent', layer: 'Quarteto' },
+        { name: 'reviewer-security-agent', layer: 'Quarteto' },
+        { name: 'fde-code-reasoning', layer: 'Quarteto' },
+        { name: 'code-ops-agent', layer: 'WAF/OPS' },
+        { name: 'code-sec-agent', layer: 'WAF/SEC' },
+        { name: 'code-rel-agent', layer: 'WAF/REL' },
+        { name: 'code-perf-agent', layer: 'WAF/PERF' },
+        { name: 'code-cost-agent', layer: 'WAF/COST' },
+        { name: 'code-sus-agent', layer: 'WAF/SUS' },
+        { name: 'swe-issue-code-reader-agent', layer: 'SWE' },
+        { name: 'swe-code-context-agent', layer: 'SWE' },
+        { name: 'swe-developer-agent', layer: 'SWE' },
+        { name: 'swe-architect-agent', layer: 'SWE' },
+        { name: 'swe-code-quality-agent', layer: 'SWE' },
+        { name: 'swe-adversarial-agent', layer: 'SWE' },
+        { name: 'swe-redteam-agent', layer: 'SWE' },
+        { name: 'swe-tech-writer-agent', layer: 'Delivery' },
+        { name: 'swe-dtl-commiter-agent', layer: 'Delivery' },
+        { name: 'reporting-agent', layer: 'Reporting' },
+      ];
+
+      items.push({
+        category: `Squad Agents (${allSquadAgents.length})`,
+        icon: Cpu,
+        items: allSquadAgents.map(a => ({
+          name: a.name,
+          version: 'v1',
+          status: detectedAgents.includes(a.name) ? 'ready' : 'stable',
+          details: a.layer,
+        })),
+      });
+
+      items.push({
+        category: 'Infrastructure',
+        icon: Box,
+        items: [
+          { name: 'fde-dev-strands-agent', version: 'v8', status: 'ready', details: 'ECS Fargate / SQUAD_MODE=dynamic' },
+          { name: 'adot-collector', version: 'latest', status: 'ready', details: 'Sidecar / X-Ray' },
+          { name: 'dashboard-status', version: 'v2', status: 'ready', details: 'Lambda / API Gateway' },
+        ]
+      });
+
+      items.push({
+        category: 'Orchestration',
+        icon: FileText,
+        items: [
+          { name: 'github-factory-ready', version: 'EB-1', status: 'ready', details: 'EventBridge → ECS' },
+          { name: 'webhook-ingest', version: 'v1', status: 'ready', details: 'Lambda → DynamoDB' },
+          { name: 'dag-fanout', version: 'v1', status: 'ready', details: 'Stream → ECS' },
+        ]
+      });
+
+      items.push({
+        category: 'Models',
+        icon: Database,
+        items: [
+          { name: 'Claude Sonnet 4.5', version: '2025-09', status: 'ready', details: 'Bedrock / us-east-1' },
+        ]
+      });
+
+      setRegistries(items);
+      setLoading(false);
+    };
+
+    buildRegistries();
+  }, [API_URL]);
+
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <RefreshCw className="w-6 h-6 animate-spin text-aws-orange" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden transition-colors duration-300">
@@ -74,7 +141,7 @@ export const RegistriesCard: React.FC = () => {
                 <h3 className="text-sm font-bold text-dynamic uppercase tracking-widest">{reg.category}</h3>
               </div>
               
-              <div className="space-y-3 flex-1">
+              <div className="space-y-3 flex-1 max-h-[300px] overflow-y-auto scrollbar-thin">
                 {reg.items.map((item, iIdx) => (
                   <div key={iIdx} className="bg-black/5 dark:bg-black/30 border border-border-main rounded-xl p-3 group hover:border-aws-orange/30 transition-all">
                     <div className="flex justify-between items-start mb-1">

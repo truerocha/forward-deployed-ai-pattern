@@ -81,15 +81,30 @@ export default function App() {
           for (const task of data.tasks) {
             if (task.events && task.events.length > 0) {
               for (const ev of task.events) {
+                // Extract agent name from event message or phase (squad mode)
+                let agentName = 'System';
+                if (ev.phase && ev.phase !== 'intake' && ev.phase !== 'workspace') {
+                  agentName = ev.phase;
+                } else if (ev.msg?.includes('Squad agent:')) {
+                  const match = ev.msg.match(/Squad agent: (.+)/);
+                  if (match) agentName = match[1];
+                } else if (ev.msg?.includes('Stage started:') || ev.msg?.includes('Stage complete:')) {
+                  const match = ev.msg.match(/(?:started|complete): (.+?)(?:\s*\(|$)/);
+                  if (match) agentName = match[1];
+                } else if (task.agent?.name) {
+                  agentName = task.agent.name;
+                }
+
                 apiLogs.push({
-                  id: `${task.task_id}-${ev.ts}`,
+                  id: `${task.task_id}-${ev.ts}-${apiLogs.length}`,
                   timestamp: ev.ts ? new Date(ev.ts).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '',
-                  agentId: task.agent?.instance_id || 'system',
-                  agentName: task.agent?.name || 'System',
+                  agentId: task.task_id,
+                  agentName: agentName,
                   message: ev.msg || '',
                   type: ev.type === 'gate' ? (ev.gate_result === 'pass' ? 'action' : 'error') :
                         ev.type === 'error' ? 'error' :
                         ev.type === 'agent' ? 'working' :
+                        ev.type === 'tool' ? 'thought' :
                         'system',
                 });
               }

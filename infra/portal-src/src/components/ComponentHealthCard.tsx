@@ -16,16 +16,11 @@ interface ComponentHealthCardProps {
 export const ComponentHealthCard: React.FC<ComponentHealthCardProps> = ({ status }) => {
   const { t } = useTranslation();
   const services: ServiceStatus[] = status?.checks ? status.checks.map((c: any) => ({
-    name: c.name,
-    endpoint: c.endpoint || 'Internal',
-    status: c.status === 'ok' ? 'active' : 'degraded'
+    name: c.name?.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) || 'Unknown',
+    endpoint: c.detail || 'Internal',
+    status: c.status === 'pass' ? 'active' : c.status === 'warn' ? 'degraded' : c.status === 'fail' ? 'maintenance' : 'active'
   })) : [
-    { name: 'API Gateway', endpoint: factoryConfig.api_endpoint, status: 'maintenance' },
-    { name: 'Webhook Ingest', endpoint: '/webhook/github', status: 'maintenance' },
-    { name: 'DORA Metrics DB', endpoint: 'DynamoDB: dora-metrics', status: 'maintenance' },
-    { name: 'Prompt Registry', endpoint: 'DynamoDB: prompt-registry', status: 'maintenance' },
-    { name: 'Artifact Storage', endpoint: `S3: ${factoryConfig.artifacts_bucket}`, status: 'maintenance' },
-    { name: 'CDN Dashboard', endpoint: factoryConfig.distribution, status: 'maintenance' },
+    { name: 'Awaiting Health Check', endpoint: 'GET /status/health', status: 'maintenance' as const },
   ];
 
   return (
