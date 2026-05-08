@@ -87,12 +87,12 @@ This document merges four complementary inputs into a single coherent, deploymen
 
 | Seq | Activity | Artifact (path) | Change Type | Depends On | Tracking |
 |-----|----------|-----------------|-------------|------------|----------|
-| 3.01 | Implement call_graph_extractor.py | `src/core/knowledge/call_graph_extractor.py` | CREATE | 1.01 (EFS) | ☐ |
-| 3.02 | Implement description_generator.py | `src/core/knowledge/description_generator.py` | CREATE | 3.01 | ☐ |
-| 3.03 | Implement vector_store.py | `src/core/knowledge/vector_store.py` | CREATE | 3.02 | ☐ |
-| 3.04 | Implement query_api.py | `src/core/knowledge/query_api.py` | CREATE | 3.03 | ☐ |
-| 3.05 | Implement knowledge_annotation.py | `src/core/knowledge/knowledge_annotation.py` | CREATE | 1.08 (knowledge table) | ☐ |
-| 3.06 | Implement data_quality_scorer.py (DORA C2) | `src/core/knowledge/data_quality_scorer.py` | CREATE | 3.05 | ☐ |
+| 3.01 | Implement call_graph_extractor.py | `src/core/knowledge/call_graph_extractor.py` | CREATE | 1.01 (EFS) | ✅ |
+| 3.02 | Implement description_generator.py | `src/core/knowledge/description_generator.py` | CREATE | 3.01 | ✅ |
+| 3.03 | Implement vector_store.py | `src/core/knowledge/vector_store.py` | CREATE | 3.02 | ✅ |
+| 3.04 | Implement query_api.py | `src/core/knowledge/query_api.py` | CREATE | 3.03 | ✅ |
+| 3.05 | Implement knowledge_annotation.py | `src/core/knowledge/knowledge_annotation.py` | CREATE | 1.08 (knowledge table) | ✅ |
+| 3.06 | Implement data_quality_scorer.py (DORA C2) | `src/core/knowledge/data_quality_scorer.py` | CREATE | 3.05 | ✅ |
 | 3.07 | Implement perturbation_engine.py | `src/core/brain_sim/perturbation_engine.py` | CREATE | 1.01 (EFS) | ☐ |
 | 3.08 | Implement behavioral_benchmark.py | `src/core/brain_sim/behavioral_benchmark.py` | CREATE | 1.01 (EFS), 2.01 | ☐ |
 | 3.09 | Implement memory_manager.py (DynamoDB backend) | `src/core/memory/memory_manager.py` | CREATE | 1.06 (memory table) | ☐ |
