@@ -78,7 +78,19 @@ export default function App() {
         // Hydrate reasoning logs from API events (survives page refresh)
         if (data.tasks && data.tasks.length > 0) {
           const apiLogs: LogEntry[] = [];
-          for (const task of data.tasks) {
+
+          // Sort tasks by updated_at (most recent first) and only show events
+          // from the most recently active task (not all 15 tasks mixed together)
+          const sortedTasks = [...data.tasks].sort((a: any, b: any) => 
+            (b.updated_at || '').localeCompare(a.updated_at || '')
+          );
+
+          // Find the most recently active task (running or most recently completed)
+          const activeTasks = sortedTasks.filter((t: any) => 
+            t.status === 'running' || t.events?.length > 0
+          ).slice(0, 3); // Show events from top 3 most recent tasks
+
+          for (const task of activeTasks) {
             if (task.events && task.events.length > 0) {
               for (const ev of task.events) {
                 // Extract agent name from event message or phase (squad mode)
@@ -100,16 +112,20 @@ export default function App() {
                   timestamp: ev.ts ? new Date(ev.ts).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '',
                   agentId: task.task_id,
                   agentName: agentName,
-                  message: ev.msg || '',
+                  message: `[${task.task_id.slice(-8)}] ${ev.msg || ''}`,
                   type: ev.type === 'gate' ? (ev.gate_result === 'pass' ? 'action' : 'error') :
                         ev.type === 'error' ? 'error' :
                         ev.type === 'agent' ? 'working' :
                         ev.type === 'tool' ? 'thought' :
                         'system',
+                  _sortKey: ev.ts || '',
                 });
               }
             }
           }
+
+          // Sort ALL events by timestamp (chronological order)
+          apiLogs.sort((a: any, b: any) => (a._sortKey || '').localeCompare(b._sortKey || ''));
           setLogs(apiLogs);
         }
       }
