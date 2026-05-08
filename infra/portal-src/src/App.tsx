@@ -446,8 +446,8 @@ export default function App() {
                   <GateHistoryCard />
                   <DataQualityCard />
                   <SquadExecutionCard />
-                  <LiveTimeline />
-                  <HumanInputCard />
+                  <LiveTimeline events={[]} />
+                  <HumanInputCard onRespond={() => {}} />
                 </div>
               </PersonaRouter>
             </div>
