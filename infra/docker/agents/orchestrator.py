@@ -293,6 +293,8 @@ class Orchestrator:
         if workspace.ready and result.get("status") == "completed":
             task_queue.update_task_stage(task_id, "review")
             pr_title = f"feat(GH-{workspace.issue_number}): {data_contract.get('title', 'Task completion')}"
+            agent_name = os.environ.get("FDE_AGENT_NAME", "FDE Agent")
+            agent_email = os.environ.get("FDE_AGENT_EMAIL", "fde-agent@factory.local")
             pr_body = (
                 f"## Automated PR from FDE Code Factory\n\n"
                 f"**Issue**: #{workspace.issue_number}\n"
@@ -302,7 +304,14 @@ class Orchestrator:
                 f"### Pipeline Summary\n"
                 f"- Milestones: {plan.completed_count}/{plan.total_count}\n"
                 f"- Constraints extracted: {len(extraction_result.constraints)}\n"
-                f"- Agents executed: {', '.join(agent_names)}\n"
+                f"- Agents executed: {', '.join(agent_names)}\n\n"
+                f"### Attribution\n"
+                f"- **Author (hands-on)**: {agent_name} <{agent_email}>\n"
+                f"- **Reviewer (codebase owner)**: Assigned via CODEOWNERS\n"
+                f"- **Task ID**: {task_id}\n\n"
+                f"---\n"
+                f"*This PR was generated autonomously by the FDE pipeline. "
+                f"The codebase owner reviews and approves.*\n"
             )
             pr_result = push_and_create_pr(workspace, pr_title, pr_body)
             if pr_result.get("pr_url"):

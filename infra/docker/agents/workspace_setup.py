@@ -107,9 +107,13 @@ def setup_workspace(event_detail: dict, metadata: dict) -> WorkspaceContext:
 
         logger.info("Cloned %s to %s", repo_full_name, repo_path)
 
-        # Configure git identity
-        _run_git(repo_path, ["config", "user.email", "fde-agent@factory.local"])
-        _run_git(repo_path, ["config", "user.name", "FDE Agent"])
+        # Configure git identity for agent commits (COE-017: proper agent labeling)
+        # The commit author identifies the FDE agent, not the codebase owner.
+        # The codebase owner reviews the PR — they don't author the code.
+        agent_email = os.environ.get("FDE_AGENT_EMAIL", "fde-agent@factory.local")
+        agent_name = os.environ.get("FDE_AGENT_NAME", "FDE Agent")
+        _run_git(repo_path, ["config", "user.email", agent_email])
+        _run_git(repo_path, ["config", "user.name", f"{agent_name} [GH-{issue_number}]"])
 
         # Create feature branch
         _run_git(repo_path, ["checkout", "-b", branch_name])
