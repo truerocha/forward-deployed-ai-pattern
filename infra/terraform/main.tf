@@ -430,8 +430,8 @@ resource "aws_ecs_task_definition" "strands_agent" {
     # Receives traces from the Strands agent on localhost:4318 (OTLP/HTTP)
     # and exports them to AWS X-Ray for distributed trace visualization.
     # Non-essential: agent continues if ADOT fails to start.
-    # IMPORTANT: Use pinned version tag, NOT :latest (COE-020: :latest caused
-    # CannotPullContainerError on Fargate due to manifest resolution failure).
+    # Image copied to private ECR via `docker buildx imagetools create`
+    # to preserve the OCI image index with platform descriptors (COE-020).
     {
       name      = "adot-collector"
       image     = "${aws_ecr_repository.strands_agent.repository_url}:adot-v0.40.0"
