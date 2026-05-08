@@ -6,6 +6,136 @@
 
 ---
 
+## COE-017: React Portal shipped without ADR, DDR update, or architecture diagram update
+
+- **Date**: 2026-05-07
+- **Severity**: Governance (P1 — architectural boundary crossed without decision record)
+- **Found in**: commit `31ef9cf` (feat(portal): import React portal with rail navigation, structured reasoning API, and WCAG accessibility)
+- **Scope of change**: 37 files, +2964/-349 lines. Introduces an entirely new technology stack (React + TypeScript + Vite + Tailwind + i18n) and a new API endpoint (`GET /status/tasks/{task_id}/reasoning`).
+- **Description**: The React portal represents a **new architectural plane** — a user-facing rendering layer that consumes the Data Plane (DynamoDB task_queue) via Lambda API Gateway. This is the E6 edge in the FDE pipeline chain (JSON artifacts → Portal renderers → User sees the review). The commit shipped with:
+  - ✅ A design document (`docs/design/portal_design_doc.md`) — thorough, 11 sections
+  - ✅ An import plan (`docs/design/import_portal_plan.md`)
+  - ✅ Cloud inventory update (`docs/cloud-inventory.md`)
+  - ❌ **No ADR** — The decision to introduce React + Vite + Tailwind (breaking the "zero dependencies" principle from the original dashboard) is not recorded. The design doc mentions ADR-011 (YAGNI) but contradicts it by introducing npm, node_modules, and a build pipeline.
+  - ❌ **No DDR update** — The design-document.md Components table doesn't list the Portal, its API endpoints, or its data flow. The Information Flow table doesn't show DynamoDB → Lambda → Portal → User.
+  - ❌ **No architecture diagram update** — The reference architecture diagram doesn't show the Portal as a consumer of the dashboard Lambda. The plane diagrams don't reflect the new rendering layer.
+  - ❌ **No flow diagram** — No `docs/flows/15-portal-reasoning.md` exists for the structured reasoning flow.
+  - ❌ **No CHANGELOG entry** — The feat is not in CHANGELOG.md.
+- **Architectural decisions that need ADR documentation**:
+  1. **Why React over zero-dependency ES modules?** — The original dashboard (`infra/dashboard/index.html`) was explicitly designed as zero-dependency per ADR-011 and SEC 6. The portal introduces `package.json` with 15+ dependencies (react, react-dom, vite, tailwindcss, lucide-react, i18next, etc.). What changed? What's the supply chain risk mitigation?
+  2. **Dual dashboard coexistence** — Both `infra/dashboard/` (zero-dep, deployed to CloudFront) and `infra/portal-src/` (React, requires build) now exist. Which is canonical? What's the migration path? When does the old one get removed?
+  3. **i18n architecture** — The portal supports en-US, pt-BR, es. This is the first multi-language artifact in the factory. What's the translation governance? Who maintains translations?
+  4. **Structured reasoning API** — `GET /status/tasks/{task_id}/reasoning` exposes the full chain-of-thought timeline. What data classification applies? Is this safe to expose without authentication? (The design doc acknowledges "No authentication on dashboard" as a known limitation.)
+  5. **WCAG POUR compliance claim** — The commit message claims WCAG accessibility. What level (A, AA, AAA)? Was it validated with assistive technology? Or is it aspirational?
+- **Impact on existing architecture**:
+  - The orchestrator (`orchestrator.py`) was modified to emit richer events with structured metadata (`phase`, `gate_name`, `gate_result`, `criteria`, `context`, `autonomy_level`, `confidence`). This changes the E4 edge contract (orchestrator → task_queue → Lambda → Portal).
+  - The `task_queue.py` was modified with `append_task_event()` accepting new kwargs. This is a data contract change that affects all consumers.
+  - The dashboard Lambda (`index.py`) gained a new route handler (`_handle_reasoning()`). This is an API surface expansion.
+- **Root cause**: Feature was developed with a design document (good) but without the governance artifacts that make the decision traceable and reversible. The design doc is excellent for "how" but doesn't answer "why this approach over alternatives" — that's what the ADR is for.
+- **Prevention**:
+  - DoD gate must check: if a feat introduces a new technology (new `package.json`, new language, new framework), an ADR is mandatory.
+  - The `fde-enterprise-docs` hook should detect new `package.json` files and flag for ADR.
+  - Architecture diagram regeneration should be part of the ship-readiness gate when new planes/edges are introduced.
+- **Well-Architected alignment**:
+  - OPS 3 (know your workload) — New rendering plane not documented in architecture
+  - OPS 10 (manage knowledge) — Decision rationale not captured
+  - SEC 6 (protect compute) — Supply chain risk from npm dependencies not assessed in ADR
+  - REL 8 (design for recovery) — No rollback plan documented if React portal fails
+  - COST 1 (practice cloud financial management) — Build pipeline cost (Vite build, CI time) not assessed
+
+## COE-016: Multi-project orchestration shipped without ADR or flow diagram
+
+- **Date**: 2026-05-07
+- **Severity**: Governance (P2 — concurrency model undocumented)
+- **Found in**: commit `7e1eb7b` (feat(factory): multi-project orchestration — registry, concurrency guard, dashboard filter)
+- **Scope of change**: 5 files, +272/-2 lines. Introduces a new module (`project_registry.py`) and modifies two critical pipeline components (`orchestrator.py`, `task_queue.py`).
+- **Description**: Multi-project orchestration introduces three capabilities that fundamentally change how the factory operates at scale:
+  - **P0 — Project Registry** (`infra/docker/agents/project_registry.py`): A singleton registry mapping repos to configuration (default_branch, tech_stack, max_concurrent_tasks, priority_boost, steering_context). Loaded from `FACTORY_PROJECTS` env var (JSON) or auto-registers unknown repos with defaults.
+  - **P1 — Concurrency Guard** (`task_queue.py` + `orchestrator.py`): `count_active_tasks_for_repo()` queries DynamoDB for IN_PROGRESS/RUNNING tasks per repo. `check_concurrency(repo, max)` gates new task execution. Default: 2 concurrent tasks per repo.
+  - **P2 — Dashboard Project Filter**: Server-side `?repo=owner/repo` filtering on `/status/tasks`. Client-side project selector dropdown.
+  
+  The commit references "Design ref: ADR-005 (Multi-Workspace Factory Topology)" but ADR-005 describes workspace-level isolation (separate `.kiro/` directories), NOT runtime concurrency control within a shared ECS cluster. These are different architectural concerns:
+  - ADR-005: How workspaces are isolated on the filesystem
+  - This feature: How tasks are throttled at runtime to prevent merge conflicts
+  
+  **What needs an ADR**:
+  1. **Concurrency model** — The guard uses DynamoDB `count_active_tasks_for_repo()` which is eventually consistent. Two tasks could pass the guard simultaneously if they query DynamoDB within the same consistency window. Is this acceptable? What's the blast radius of a race condition (two agents editing the same repo simultaneously)?
+  2. **Singleton lifecycle** — `ProjectRegistry` uses a module-level singleton (`_registry`). In ECS Fargate, each task is a separate container, so the singleton is per-container. But if the factory moves to Lambda or long-running ECS services, the singleton could become stale. What's the invalidation strategy?
+  3. **Auto-registration semantics** — Unknown repos get auto-registered with `max_concurrent_tasks=2`. This means ANY repo that sends a webhook gets factory capacity. Is this intentional? What prevents a malicious webhook from consuming all factory capacity?
+  4. **Priority boost** — `priority_boost` field exists in `ProjectConfig` but is never consumed by the orchestrator. Is this dead code or future work? If future work, what's the scheduling algorithm?
+  5. **Configuration source** — `FACTORY_PROJECTS` is a JSON env var. For 50+ projects, this becomes unwieldy. What's the scaling path? DynamoDB table? S3 config file? SSM Parameter Store?
+  
+  **What needs a flow diagram**:
+  - The concurrency guard is a new gate in the pipeline that can return `"queued"` status. This is a new pipeline state that doesn't exist in any current flow diagram. The orchestrator can now return 4 statuses: `skipped`, `rejected`, `queued`, `completed/partial/error`. The `queued` state has no retry mechanism documented — who picks up queued tasks when a slot opens?
+  
+- **Impact on existing architecture**:
+  - `orchestrator.py` now imports `project_registry.get_registry()` — new dependency
+  - `task_queue.py` gained `check_concurrency()` and `count_active_tasks_for_repo()` — new DynamoDB queries
+  - Dashboard Lambda gained `_extract_projects()` and `?repo=` filter — new API behavior
+  - The `queued` status is a new terminal state that the DAG resolution (ADR-014) doesn't handle — queued tasks don't trigger downstream dependencies
+  
+- **Unanswered questions (Red Team)**:
+  1. **What happens to queued tasks?** — The orchestrator returns `"queued"` but nothing re-triggers the task when a slot opens. Is the expectation that EventBridge retries? ECS task retries? Manual re-trigger? This is a **liveness gap** — tasks can be permanently queued.
+  2. **DynamoDB consistency** — `count_active_tasks_for_repo()` presumably uses a Scan or Query. Is it using ConsistentRead? If not, two tasks could pass the guard simultaneously.
+  3. **What if max_concurrent_tasks=0?** — The guard checks `current < max_concurrent`. If max is 0, no tasks can ever run. Is there validation?
+  4. **Container restart** — If the ECS task crashes mid-execution, the task stays IN_PROGRESS in DynamoDB. The concurrency guard counts it as active. Who cleans up stuck tasks? Is there a TTL?
+  
+- **Root cause**: Feature built incrementally (P0 → P1 → P2) within a single session without pausing to write the ADR. The commit message is well-structured (documents all three phases) but the architectural decisions are embedded in code comments, not in a traceable ADR.
+- **Prevention**:
+  - Any feature that introduces a new pipeline state (like `queued`) must have a flow diagram showing the state machine.
+  - Any feature that introduces concurrency control must have an ADR documenting the consistency model and failure modes.
+  - The DoD gate should check: if a feat modifies `orchestrator.py` (the pipeline spine), an ADR is mandatory.
+- **Well-Architected alignment**:
+  - REL 1 (manage service quotas) — Concurrency limits are quotas; their behavior under load is undocumented
+  - REL 5 (design interactions to prevent failures) — Race condition in DynamoDB eventual consistency not addressed
+  - REL 9 (plan for recovery) — No recovery path for permanently queued tasks
+  - OPS 5 (reduce defects) — Dead code (`priority_boost`) creates confusion
+  - OPS 8 (respond to events) — `queued` state has no event-driven retry mechanism
+
+## COE-015: Five systemic agent fixes shipped without individual COE entries
+
+- **Date**: 2026-05-07
+- **Severity**: Process
+- **Found in**: commit `1a2af15` (fix(agent): 5 systemic fixes for workspace delivery pipeline)
+- **Description**: Five distinct fixes were bundled into a single commit without individual COE entries: (1) workspace setup failures, (2) task_id correlation with webhook_ingest, (3) stage update emission, (4) Bedrock inference profile migration, (5) DashboardCallback removal. Each represents a different failure mode that should be individually documented for pattern recognition.
+- **Fix**: Documenting as a batch COE. Individual root causes: (1) clone/branch/push sequence not atomic, (2) correlation ID not propagated from ingest to orchestrator, (3) stage events not emitted at correct lifecycle points, (4) legacy model ID used instead of inference profile, (5) non-callable object passed to Agent constructor.
+- **Root cause**: Pressure to ship quickly led to bundling unrelated fixes. Each fix addresses a different module boundary (E1: webhook→router, E2: router→orchestrator, E3: orchestrator→workspace, E4: workspace→bedrock, E5: agent→dashboard).
+- **Prevention**: One fix per commit. Each fix gets its own COE entry. The circuit breaker hook should enforce this.
+- **Well-Architected alignment**: OPS 5 (reduce defects), OPS 8 (respond to events)
+
+## COE-014: Bedrock inference profile fix shipped without model migration documentation
+
+- **Date**: 2026-05-07
+- **Severity**: Infrastructure
+- **Found in**: commit `22a80a8` (fix(bedrock): use inference profile (us. prefix) + add Converse/ConverseStream IAM)
+- **Description**: The Bedrock model was migrated from direct model ID (`anthropic.claude-3-haiku-20240307-v1:0`) to inference profile (`us.anthropic.claude-haiku-4-5-20251001-v1:0`) without documenting the migration rationale, IAM policy changes (Converse + ConverseStream), or the `us.` prefix requirement for cross-region inference profiles.
+- **Fix**: CHANGELOG entry exists (under "Changed — Bedrock Model"). Missing: explicit IAM policy documentation in deployment guide.
+- **Root cause**: Infrastructure change treated as a simple version bump rather than an architectural decision affecting IAM, cost, and availability.
+- **Prevention**: Model changes should be treated as infrastructure changes requiring deployment guide updates.
+- **Well-Architected alignment**: SEC 3 (manage permissions), COST 1 (practice cloud financial management)
+
+## COE-013: EventBridge InputTransformer fix required 3 commits to resolve
+
+- **Date**: 2026-05-06 / 2026-05-07
+- **Severity**: Process (multi-commit fix pattern)
+- **Found in**: commits `72c8c9d`, `2ba6959`, `c40a075`, `0b5618f`
+- **Description**: The EventBridge→ECS silent failure (COE-011) required 4 separate fix commits to fully resolve: (1) InputTransformer + Docker platform, (2) labels array in reconstructed event, (3) fetch issue body from GitHub API, (4) onboarding agent IAM + InputTransformer quotes. Each commit fixed a symptom discovered only after the previous fix was deployed.
+- **Fix**: All 4 fixes are now deployed and working (proven by task `03b21106`). COE-011 documents the root cause.
+- **Root cause**: The "symptom chasing" anti-pattern (COE-052). Each fix was deployed without verifying the full data path end-to-end. The flat env var pattern was correct, but downstream consumers (router, agent) had additional assumptions about event shape.
+- **Prevention**: After any EventBridge fix, run the full `scripts/validate-webhook-eventbridge.sh` isolation script before declaring fixed. Verify at the consumer, not just the producer.
+- **Well-Architected alignment**: OPS 8 (respond to events), REL 5 (design interactions to prevent failures)
+
+## COE-012: README and design document counts drifted again (systemic recurrence)
+
+- **Date**: 2026-05-07
+- **Severity**: Documentation (systemic)
+- **Found in**: README.md, docs/architecture/design-document.md
+- **Description**: Despite COE-010 creating the doc-gardening agent, counts drifted again: ADRs (13→16), flows (13→14), hooks (14→17 in structure, 16→17 in table), tests (54→171). The `> Generate: python3 scripts/generate_reference_architecture.py` line in the README hero section was disconnected from the solution narrative — it's an implementation detail that belongs in the DDR, not the user-facing README.
+- **Fix**: Updated all counts in README (badges, structure, Documentation Index). Removed stale generate script callout from hero section. Added missing `fde-repo-onboard` hook to table. Updated Code to Docs cross-reference.
+- **Root cause**: The doc-gardening agent exists but is `userTriggered` — it doesn't run automatically on feat/fix commits. The DoD gate doesn't enforce count consistency.
+- **Prevention**: Consider promoting doc-gardening to `postTaskExecution` trigger. At minimum, run before every release.
+- **Well-Architected alignment**: OPS 3 (know your workload), OPS 10 (manage knowledge)
+
 ## COE-011: Webhook delivered (HTTP 200) but no ECS task ran — InputTransformer + ECS silent failure
 
 - **Date**: 2026-05-06 / 2026-05-07

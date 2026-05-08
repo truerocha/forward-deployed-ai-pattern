@@ -208,6 +208,9 @@ def count_active_tasks_for_repo(repo: str) -> int:
     Used by the concurrency guard to prevent too many parallel agents
     on the same repository (risk of merge conflicts).
 
+    Uses ConsistentRead on the base table (not GSI) to avoid race conditions
+    where two tasks pass the guard simultaneously due to eventual consistency.
+
     Args:
         repo: Full repo name (e.g., 'truerocha/cognitive-wafr').
 
@@ -233,10 +236,19 @@ def check_concurrency(repo: str, max_concurrent: int = 2) -> tuple[bool, int]:
     Args:
         repo: Full repo name.
         max_concurrent: Maximum allowed concurrent tasks for this repo.
+            Must be >= 1. Values <= 0 are treated as 1 (fail-safe).
 
     Returns:
         Tuple of (can_proceed: bool, current_count: int).
     """
+    # Fail-safe: never allow max_concurrent <= 0 to permanently block a repo
+    if max_concurrent <= 0:
+        logger.warning(
+            "Concurrency guard: max_concurrent=%d for repo=%s is invalid, using 1",
+            max_concurrent, repo,
+        )
+        max_concurrent = 1
+
     current = count_active_tasks_for_repo(repo)
     can_proceed = current < max_concurrent
     if not can_proceed:
@@ -245,6 +257,93 @@ def check_concurrency(repo: str, max_concurrent: int = 2) -> tuple[bool, int]:
             repo, current, max_concurrent,
         )
     return can_proceed, current
+
+
+def reap_stuck_tasks(max_age_minutes: int = 60) -> list[str]:
+    """Reap tasks stuck in IN_PROGRESS/RUNNING beyond the max age.
+
+    ECS tasks can crash without updating DynamoDB. These orphaned records
+    block the concurrency guard permanently. This function marks them as
+    FAILED so slots are freed.
+
+    Should be called periodically (e.g., by a CloudWatch Events rule or
+    before each concurrency check).
+
+    Args:
+        max_age_minutes: Tasks older than this (since last update) are reaped.
+
+    Returns:
+        List of task_ids that were reaped.
+    """
+    table = _get_table()
+    reaped = []
+    cutoff = datetime.now(timezone.utc).timestamp() - (max_age_minutes * 60)
+
+    for status in ("IN_PROGRESS", "RUNNING"):
+        items = table.query(
+            IndexName="status-created-index",
+            KeyConditionExpression=Key("status").eq(status),
+        ).get("Items", [])
+
+        for item in items:
+            updated_at = item.get("updated_at", "")
+            if not updated_at:
+                continue
+            try:
+                updated_ts = datetime.fromisoformat(updated_at.replace("Z", "+00:00")).timestamp()
+            except (ValueError, TypeError):
+                continue
+
+            if updated_ts < cutoff:
+                task_id = item["task_id"]
+                table.update_item(
+                    Key={"task_id": task_id},
+                    UpdateExpression="SET #s = :status, #e = :error, updated_at = :now",
+                    ExpressionAttributeNames={"#s": "status", "#e": "error"},
+                    ExpressionAttributeValues={
+                        ":status": "FAILED",
+                        ":error": f"Reaped: stuck in {status} for >{max_age_minutes}min (container likely crashed)",
+                        ":now": _now(),
+                    },
+                )
+                reaped.append(task_id)
+                logger.warning(
+                    "Reaped stuck task %s (status=%s, last_update=%s)",
+                    task_id, status, updated_at,
+                )
+
+    return reaped
+
+
+def retry_queued_tasks(repo: str) -> list[str]:
+    """Find tasks that were queued due to concurrency limits and are now eligible.
+
+    Called after a task completes or is reaped, to unblock queued work.
+    Tasks in 'ingested' stage with a concurrency gate failure event are
+    candidates for retry.
+
+    Args:
+        repo: The repo that just freed a slot.
+
+    Returns:
+        List of task_ids that are now eligible for retry.
+    """
+    table = _get_table()
+    eligible = []
+
+    # Find READY tasks for this repo stuck at 'ingested' stage
+    # (they hit the concurrency guard and were returned as 'queued')
+    ready_items = table.query(
+        IndexName="status-created-index",
+        KeyConditionExpression=Key("status").eq("READY"),
+    ).get("Items", [])
+
+    for item in ready_items:
+        if item.get("repo") == repo and item.get("current_stage") == "ingested":
+            eligible.append(item["task_id"])
+            logger.info("Task %s eligible for retry (repo=%s slot freed)", item["task_id"], repo)
+
+    return eligible
 
 
 def complete_task(task_id: str, result: str) -> dict:
@@ -256,7 +355,21 @@ def complete_task(task_id: str, result: str) -> dict:
         ExpressionAttributeValues={":status": "COMPLETED", ":result": result, ":now": _now()},
     )
     logger.info("Task %s completed", task_id)
+
+    # Resolve DAG dependencies (existing behavior)
     promoted = _resolve_dependencies(task_id)
+
+    # Reap stuck tasks and retry queued tasks for this repo (COE-016 fix)
+    task = get_task(task_id)
+    repo = task.get("repo", "") if task else ""
+    if repo:
+        reaped = reap_stuck_tasks(max_age_minutes=60)
+        if reaped:
+            logger.info("Reaped %d stuck tasks during completion of %s", len(reaped), task_id)
+        eligible = retry_queued_tasks(repo)
+        if eligible:
+            logger.info("Found %d queued tasks eligible for retry after %s completed", len(eligible), task_id)
+
     return {"task_id": task_id, "status": "COMPLETED", "promoted_tasks": promoted}
 
 

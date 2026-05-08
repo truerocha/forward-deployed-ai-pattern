@@ -1,8 +1,8 @@
 # Design Document: Autonomous Code Factory
 
 > Forward Deployed Engineer — GenAI powered by Kiro
-> Version: 3.0
-> Date: 2026-05-04
+> Version: 3.1
+> Date: 2026-05-07
 
 ## Executive Summary
 
@@ -67,7 +67,7 @@ See `docs/architecture/reference-architecture.png` for the full AWS reference ar
 | Component | Owned State | Responsibility |
 |-----------|-------------|----------------|
 | Spec Control Plane | `.kiro/specs/` | Stores work items, acceptance criteria, holdout scenarios |
-| Hook Engine | `.kiro/hooks/` (16 hooks) | Gates execution at preToolUse, postToolUse, preTask, postTask, userTriggered |
+| Hook Engine | `.kiro/hooks/` (17 hooks) | Gates execution at preToolUse, postToolUse, preTask, postTask, userTriggered |
 | Steering Context | `.kiro/steering/` + `~/.kiro/steering/` | Provides project-specific and universal context to the agent |
 | Notes System | `.kiro/notes/` + `~/.kiro/notes/shared/` | Persists cross-session knowledge with verification status |
 | Meta System | `.kiro/meta/` | Stores human feedback and prompt refinement history |
@@ -136,20 +136,35 @@ See `docs/adr/` for detailed Architecture Decision Records:
 - ADR-014: Secret Isolation and DAG Parallelism
 - ADR-015: Repo Onboarding Agent — Phase 0 Codebase Reasoning
 - ADR-016: Ephemeral Catalog and Data Residency for Regulated Environments
+- ADR-017: React Portal for Factory Observability UX
 
 ## Testing Design
 
 | Scope | Command | Coverage |
 |-------|---------|----------|
-| Protocol E2E | `python3 -m pytest tests/test_fde_e2e_protocol.py` | All 13 hooks, steerings, design doc coherence |
+| Protocol E2E | `python3 -m pytest tests/test_fde_e2e_protocol.py` | All 17 hooks, steerings, design doc coherence |
 | Quality Threshold | `python3 -m pytest tests/test_fde_quality_threshold.py` | Bare vs FDE response quality comparison |
+| Pipeline Data Travel | `python3 -m pytest tests/test_pipeline_data_travel.py` | 7 cross-module contract tests (E1→E5 data flows) |
+| Orchestrator E2E | `python3 -m pytest tests/test_orchestrator_e2e.py` | Full pipeline wiring with real EventBridge events |
+| Execution Plans | `python3 -m pytest tests/test_execution_plans.py` | Resumable milestone tracking, filesystem persistence |
+| Doc Gardening | `python3 -m pytest tests/test_doc_gardening.py` | Automated drift detection (5 checks) |
+| Golden Principles | `python3 -m pytest tests/test_golden_principles.py` | Mechanical code quality invariants |
+| Lint Remediation | `python3 -m pytest tests/test_lint_remediation.py` | Custom linters with remediation messages |
+| PR LLM Review | `python3 -m pytest tests/test_pr_llm_review.py` | Agent-to-agent PR review (pattern + LLM) |
+| Observability Tools | `python3 -m pytest tests/test_observability_tools.py` | Factory metrics and health report tools |
+| Autonomy Level | `python3 -m pytest tests/test_autonomy_level.py` | L1-L5 autonomy computation |
+| Failure Modes | `python3 -m pytest tests/test_failure_mode_taxonomy.py` | FM-01 through FM-99 classification |
+| DORA Metrics | `python3 -m pytest tests/test_domain_segmented_metrics.py` | 4 DORA + 5 factory metrics |
+| Scope Boundaries | `python3 -m pytest tests/test_scope_boundaries.py` | Out-of-scope rejection, confidence levels |
 | Language Lint | `python3 scripts/lint_language.py` | Violent, trauma, weasel word detection |
+| Full Suite | `python3 -m pytest tests/ -v` | All 171 tests across 15 test files |
 
 ## Open Questions
 
 1. How to handle inter-workspace dependency validation at scale (currently manual via interface contracts)
-2. When to introduce Strands SDK for parallel agent orchestration
+2. ~~When to introduce Strands SDK for parallel agent orchestration~~ — **Resolved**: Strands SDK deployed in `infra/docker/agents/` (2026-05-05). Agent registry, builder, and orchestrator use Strands Agent instances.
 3. How to measure ROI of the factory compared to traditional development
+4. When to promote `fde-doc-gardening` from `userTriggered` to `postTaskExecution` (COE-012 recurrence suggests now)
 
 ## References
 

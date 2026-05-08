@@ -159,8 +159,17 @@ class Orchestrator:
 
         # ── Step 3.2: Concurrency Guard ─────────────────────────
         # Prevent too many parallel agents on the same repo (merge conflict risk).
+        # First, reap any stuck tasks to free slots (COE-016: stuck task cleanup).
         repo = data_contract.get("repo", "")
         if repo:
+            reaped = task_queue.reap_stuck_tasks(max_age_minutes=60)
+            if reaped:
+                task_queue.append_task_event(
+                    task_id, "system",
+                    f"Reaped {len(reaped)} stuck task(s) before concurrency check",
+                    phase="intake",
+                )
+
             project_config = get_registry().get_project(repo)
             can_proceed, active_count = task_queue.check_concurrency(
                 repo, project_config.max_concurrent_tasks,

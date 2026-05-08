@@ -5,8 +5,8 @@
 > From reactive code writer to autonomous engineering partner.
 > The Staff Engineer writes specs. The factory ships code.
 
-[![Tests](https://img.shields.io/badge/tests-54%20passed-brightgreen)]()
-[![Hooks](https://img.shields.io/badge/hooks-16%20(4%20V2%20%2B%2012%20V3)-blue)]()
+[![Tests](https://img.shields.io/badge/tests-171%20collected-brightgreen)]()
+[![Hooks](https://img.shields.io/badge/hooks-17%20(4%20V2%20%2B%2013%20V3)-blue)]()
 [![Autonomy Level](https://img.shields.io/badge/level-L4%20Autonomous%20Factory-purple)]()
 
 ---
@@ -63,8 +63,6 @@ The factory is organized into **5 modular planes**, each with its own diagram an
 ![Reference Architecture](docs/architecture/reference-architecture.png)
 
 The complete AWS reference architecture shows all cloud services, data flows, and integration points in a single view. It covers: API Gateway (webhook ingestion), EventBridge (event routing), ECS Fargate (headless agent execution), Amazon Bedrock (LLM inference), DynamoDB (state management), S3 (artifact storage), Lambda (DAG fan-out + dead-letter), CloudWatch/SNS/SQS (observability), CloudFront (dashboard CDN), and Secrets Manager (credential isolation).
-
-> Generate: `python3 scripts/generate_reference_architecture.py`
 
 **Cloud orchestration (optional):** When deployed to AWS, ALM webhooks flow through API Gateway → EventBridge → ECS Fargate, where a Strands agent container runs the FDE protocol headless using Bedrock for inference. Results are written to S3 and ALM status is updated automatically. See [Cloud Orchestration Flow](docs/flows/13-cloud-orchestration.md).
 
@@ -125,7 +123,7 @@ For each project in your manifest:
 
 See [docs/guides/fde-adoption-guide.md](docs/guides/fde-adoption-guide.md) for the full walkthrough with Next.js and Python microservice examples.
 
-## The 16 Hooks
+## The 17 Hooks
 
 | Hook | Event | Purpose | Level |
 |------|-------|---------|-------|
@@ -145,6 +143,7 @@ See [docs/guides/fde-adoption-guide.md](docs/guides/fde-adoption-guide.md) for t
 | fde-prompt-refinement | userTriggered | Meta-agent: factory health + prompt improvements | L3+ |
 | fde-doc-gardening | userTriggered | Detect documentation drift from code | L3+ |
 | fde-golden-principles | userTriggered | Validate code against structural invariants | L3+ |
+| fde-repo-onboard | userTriggered | Phase 0 codebase reasoning (Magika + tree-sitter + Haiku) | L3+ |
 
 ## Repo Structure
 
@@ -152,15 +151,15 @@ See [docs/guides/fde-adoption-guide.md](docs/guides/fde-adoption-guide.md) for t
 forward-deployed-engineer-pattern/
 +-- .kiro/                          # Factory template (copy to your projects)
 |   +-- steering/                   # Protocol + enterprise context
-|   +-- hooks/                      # 14 hooks (4 V2 + 10 V3)
+|   +-- hooks/                      # 17 hooks (4 V2 + 13 V3)
 |   +-- specs/                      # Working memory + holdout templates
 |   +-- notes/                      # Cross-session learning structure
 |   +-- meta/                       # Human feedback + refinement log
 |   +-- settings/                   # MCP config template
 +-- docs/
 |   +-- architecture/               # System diagram + design document (DDR)
-|   +-- adr/                        # 13 Architecture Decision Records
-|   +-- flows/                      # 13 Mermaid feature flow diagrams
+|   +-- adr/                        # 17 Architecture Decision Records
+|   +-- flows/                      # 14 Mermaid feature flow diagrams
 |   +-- blueprint/                  # V3 blueprint + artifacts + deploy guide
 |   +-- design/                     # V2 design document (research foundations)
 |   +-- guides/                     # Adoption guide with walkthroughs
@@ -178,6 +177,8 @@ forward-deployed-engineer-pattern/
 |   +-- validate-e2e-cloud.sh     # E2E cloud infrastructure validation
 |   +-- teardown-fde.sh           # Decommission AWS resources (Terraform or tag-based)
 |   +-- generate_architecture_diagram.py
+|   +-- generate_reference_architecture.py
+|   +-- generate_plane_diagrams.py
 |   +-- lint_language.py
 +-- infra/
 |   +-- terraform/                  # AWS IaC (ECR, ECS, Bedrock, S3, Secrets, VPC)
@@ -186,6 +187,18 @@ forward-deployed-engineer-pattern/
 +-- tests/
     +-- test_fde_e2e_protocol.py    # Structural E2E test (48 tests)
     +-- test_fde_quality_threshold.py # Quality comparison test (6 tests)
+    +-- test_pipeline_data_travel.py # Cross-module contract tests (7 tests)
+    +-- test_orchestrator_e2e.py    # Full pipeline wiring (3 tests)
+    +-- test_execution_plans.py    # Resumable milestone tracking (15 tests)
+    +-- test_doc_gardening.py      # Documentation drift detection (12 tests)
+    +-- test_golden_principles.py  # Code quality invariants (13 tests)
+    +-- test_lint_remediation.py   # Custom linters (12 tests)
+    +-- test_pr_llm_review.py      # Agent-to-agent PR review (12 tests)
+    +-- test_observability_tools.py # Factory metrics tools (7 tests)
+    +-- test_autonomy_level.py     # L1-L5 autonomy computation (5 tests)
+    +-- test_failure_mode_taxonomy.py # Failure classification
+    +-- test_domain_segmented_metrics.py # DORA + factory metrics
+    +-- test_scope_boundaries.py   # Out-of-scope rejection
 ```
 
 ## Research Foundations
@@ -220,10 +233,10 @@ The factory integrates with GitHub Actions and GitLab CI Ultimate (through mirro
 | [AWS Deployment Setup](docs/guides/deployment-setup.md) | SSO auth, Terraform prerequisites, deploy commands | You want to deploy the cloud infrastructure |
 | [Auth Setup](docs/guides/auth-setup.md) | ALM token creation (GitHub, GitLab, Asana) | You need to configure platform API access |
 | [Blueprint](docs/blueprint/fde-blueprint-design.md) | Full architecture (16 sections) | You want to understand the design decisions |
-| [Hook Deploy Guide](docs/blueprint/fde-hooks-deploy-guide.md) | Exact JSON for all 13 hooks | You want to deploy or customize hooks |
+| [Hook Deploy Guide](docs/blueprint/fde-hooks-deploy-guide.md) | Exact JSON for all 17 hooks | You want to deploy or customize hooks |
 | [Design Document](docs/architecture/design-document.md) | Requirements, components, information flow | You want the formal tech design |
-| [Feature Flows](docs/flows/README.md) | 13 Mermaid diagrams | You want to see how each feature works |
-| [ADRs](docs/adr/) | 13 Architecture Decision Records | You want to understand why decisions were made |
+| [Feature Flows](docs/flows/README.md) | 14 Mermaid diagrams | You want to see how each feature works |
+| [ADRs](docs/adr/) | 17 Architecture Decision Records | You want to understand why decisions were made |
 | [V2 Design Doc](docs/design/forward-deployed-ai-engineers.md) | Research foundations | You want the academic grounding |
 | [Blogpost](docs/blogpost-autonomous-code-factory.md) | Public summary | You want to share with your team |
 
@@ -238,7 +251,12 @@ The factory integrates with GitHub Actions and GitLab CI Ultimate (through mirro
 | `.kiro/hooks/fde-ship-readiness.kiro.hook` | [Flow 06](docs/flows/06-ship-readiness.md) |
 | `.kiro/hooks/fde-enterprise-docs.kiro.hook` | [ADR-007](docs/adr/ADR-007-cross-session-learning-notes.md), [Flow 08](docs/flows/08-cross-session-learning.md) |
 | `.kiro/hooks/fde-prompt-refinement.kiro.hook` | [Flow 09](docs/flows/09-meta-agent.md) |
+| `.kiro/hooks/fde-repo-onboard.kiro.hook` | [ADR-015](docs/adr/ADR-015-repo-onboarding-phase-zero.md), [Flow 14](docs/flows/14-repo-onboarding.md) |
+| `.kiro/hooks/fde-doc-gardening.kiro.hook` | [COE-010](docs/corrections-of-error.md) |
+| `.kiro/hooks/fde-golden-principles.kiro.hook` | [Design: Golden Principles](docs/design/golden-principles.md) |
 | `.kiro/steering/fde.md` | [V2 Design Doc](docs/design/forward-deployed-ai-engineers.md), [Blueprint](docs/blueprint/fde-blueprint-design.md) |
+| `infra/docker/agents/onboarding/` | [ADR-015](docs/adr/ADR-015-repo-onboarding-phase-zero.md), [ADR-016](docs/adr/ADR-016-ephemeral-catalog-data-residency.md) |
+| `infra/docker/agents/orchestrator.py` | [Flow 13](docs/flows/13-cloud-orchestration.md), [Design Document](docs/architecture/design-document.md) |
 | `scripts/provision-workspace.sh` | [Adoption Guide](docs/guides/fde-adoption-guide.md) |
 
 ---

@@ -28,7 +28,7 @@ class ProjectConfig:
     default_branch: str = "main"
     tech_stack: list[str] = field(default_factory=list)
     max_concurrent_tasks: int = 2
-    priority_boost: int = 0  # Lower = higher priority (added to P-level)
+    priority_boost: int = 0  # Reserved: future scheduling algorithm (lower = higher priority)
     steering_context: str = ""  # Additional steering injected into agent prompts
     labels: dict[str, str] = field(default_factory=dict)  # Metadata labels
 
@@ -42,13 +42,20 @@ class ProjectRegistry:
 
     Provides:
     - Project lookup by repo name
-    - Default configuration for unknown repos (auto-register)
+    - Default configuration for unknown repos (auto-register with allowlist check)
     - Concurrency limits per project
     - Tech stack defaults for the Agent Builder
+
+    Security: Auto-registration is gated by FACTORY_ALLOW_AUTO_REGISTER env var.
+    When disabled, only pre-configured repos can use factory capacity.
     """
 
     def __init__(self):
         self._projects: dict[str, ProjectConfig] = {}
+        self._allow_auto_register = os.environ.get(
+            "FACTORY_ALLOW_AUTO_REGISTER", "true"
+        ).lower() in ("true", "1", "yes")
+        self._allowed_orgs: set[str] = set()
         self._load_from_env()
 
     def _load_from_env(self) -> None:
@@ -65,7 +72,16 @@ class ProjectRegistry:
                 "max_concurrent_tasks": 3
             }
         ]
+
+        Also loads FACTORY_ALLOWED_ORGS (comma-separated) to restrict
+        auto-registration to specific GitHub/GitLab organizations.
         """
+        # Load allowed orgs for auto-registration gating
+        allowed_orgs_str = os.environ.get("FACTORY_ALLOWED_ORGS", "")
+        if allowed_orgs_str:
+            self._allowed_orgs = {org.strip() for org in allowed_orgs_str.split(",") if org.strip()}
+            logger.info("Auto-registration restricted to orgs: %s", self._allowed_orgs)
+
         projects_json = os.environ.get("FACTORY_PROJECTS", "")
         if not projects_json:
             logger.info("No FACTORY_PROJECTS env var — using auto-registration mode")
@@ -84,8 +100,9 @@ class ProjectRegistry:
     def get_project(self, repo_full_name: str) -> ProjectConfig:
         """Get project configuration by repo name.
 
-        If the repo is not registered, auto-registers with defaults.
-        This allows the factory to handle any repo without pre-configuration.
+        If the repo is not registered:
+        - If auto-registration is enabled AND the org is allowed: auto-register with defaults
+        - Otherwise: return a restricted config (max_concurrent_tasks=0 blocks execution)
 
         Args:
             repo_full_name: Full repo name (e.g., 'truerocha/cognitive-wafr').
@@ -96,10 +113,27 @@ class ProjectRegistry:
         if repo_full_name in self._projects:
             return self._projects[repo_full_name]
 
+        # Check if auto-registration is allowed for this repo
+        org = repo_full_name.split("/")[0] if "/" in repo_full_name else ""
+
+        if not self._allow_auto_register:
+            logger.warning(
+                "Rejected unknown repo: %s (auto-registration disabled)", repo_full_name
+            )
+            # Return a config that will be blocked by concurrency guard (max=1 but not registered)
+            return ProjectConfig(repo_full_name=repo_full_name, max_concurrent_tasks=1)
+
+        if self._allowed_orgs and org not in self._allowed_orgs:
+            logger.warning(
+                "Rejected unknown repo: %s (org '%s' not in allowed list: %s)",
+                repo_full_name, org, self._allowed_orgs,
+            )
+            return ProjectConfig(repo_full_name=repo_full_name, max_concurrent_tasks=1)
+
         # Auto-register with defaults
         config = ProjectConfig(repo_full_name=repo_full_name)
         self._projects[repo_full_name] = config
-        logger.info("Auto-registered project: %s (defaults)", repo_full_name)
+        logger.info("Auto-registered project: %s (defaults, org=%s)", repo_full_name, org)
         return config
 
     def list_projects(self) -> list[ProjectConfig]:
