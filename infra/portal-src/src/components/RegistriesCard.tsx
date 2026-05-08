@@ -83,8 +83,28 @@ export const RegistriesCard: React.FC = () => {
         icon: Box,
         items: [
           { name: 'fde-dev-strands-agent', version: 'v8', status: 'ready', details: 'ECS Fargate / SQUAD_MODE=dynamic' },
-          { name: 'adot-collector', version: 'latest', status: 'ready', details: 'Sidecar / X-Ray' },
+          { name: 'fde-dev-squad-agent', version: 'v1', status: 'ready', details: 'ECS Fargate / Parametrized' },
+          { name: 'fde-dev-orchestrator', version: 'v1', status: 'ready', details: 'ECS Fargate / 512MB dispatcher' },
+          { name: 'fde-dev-fidelity-agent', version: 'v1', status: 'ready', details: 'ECS Fargate / Haiku fast-tier' },
+          { name: 'adot-collector', version: 'v0.40', status: 'ready', details: 'Sidecar / X-Ray' },
+          { name: 'fde-dev-agent-workspaces', version: 'v1', status: 'ready', details: 'EFS / General Purpose' },
           { name: 'dashboard-status', version: 'v2', status: 'ready', details: 'Lambda / API Gateway' },
+          { name: 'ws-api', version: 'v1', status: 'ready', details: 'API Gateway WebSocket / HITL' },
+        ]
+      });
+
+      items.push({
+        category: 'Data Plane (DynamoDB)',
+        icon: Database,
+        items: [
+          { name: 'fde-dev-scd', version: 'v1', status: 'ready', details: 'Shared Context Document / TTL 7d' },
+          { name: 'fde-dev-context-hierarchy', version: 'v1', status: 'ready', details: 'Cross-session context / L1-L5' },
+          { name: 'fde-dev-metrics', version: 'v1', status: 'ready', details: 'Unified metrics / DORA+Cost+VSM' },
+          { name: 'fde-dev-memory', version: 'v1', status: 'ready', details: 'Structured memory / decisions' },
+          { name: 'fde-dev-organism', version: 'v1', status: 'ready', details: 'Organism ladder / O1-O5' },
+          { name: 'fde-dev-knowledge', version: 'v1', status: 'ready', details: 'Annotations + quality scores' },
+          { name: 'fde-dev-task-queue', version: 'v1', status: 'ready', details: 'Task queue / DAG fan-out' },
+          { name: 'fde-dev-prompt-registry', version: 'v1', status: 'ready', details: 'Prompt versioning' },
         ]
       });
 
