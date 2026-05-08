@@ -26,6 +26,9 @@ resource "aws_lambda_function" "dashboard_status" {
       TASK_QUEUE_TABLE      = aws_dynamodb_table.task_queue.name
       AGENT_LIFECYCLE_TABLE = aws_dynamodb_table.agent_lifecycle.name
       DORA_METRICS_TABLE    = aws_dynamodb_table.dora_metrics.name
+      PROMPT_REGISTRY_TABLE = aws_dynamodb_table.prompt_registry.name
+      TASK_DEF_FAMILY       = aws_ecs_task_definition.strands_agent.family
+      EVENT_BUS_NAME        = aws_cloudwatch_event_bus.factory.name
       ENVIRONMENT           = var.environment
       AWS_REGION_NAME       = var.aws_region
     }
@@ -60,7 +63,7 @@ resource "aws_iam_role_policy" "dashboard_status_policy" {
     Statement = [
       {
         Effect   = "Allow"
-        Action   = ["dynamodb:Scan", "dynamodb:Query"]
+        Action   = ["dynamodb:Scan", "dynamodb:Query", "dynamodb:GetItem", "dynamodb:DescribeTable"]
         Resource = [
           aws_dynamodb_table.task_queue.arn,
           "${aws_dynamodb_table.task_queue.arn}/index/*",
@@ -68,7 +71,18 @@ resource "aws_iam_role_policy" "dashboard_status_policy" {
           "${aws_dynamodb_table.agent_lifecycle.arn}/index/*",
           aws_dynamodb_table.dora_metrics.arn,
           "${aws_dynamodb_table.dora_metrics.arn}/index/*",
+          aws_dynamodb_table.prompt_registry.arn,
         ]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["ecs:DescribeTaskDefinition"]
+        Resource = ["*"]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["events:ListRules"]
+        Resource = ["*"]
       },
       {
         Effect   = "Allow"
@@ -97,6 +111,12 @@ resource "aws_apigatewayv2_route" "dashboard_status" {
 resource "aws_apigatewayv2_route" "dashboard_health" {
   api_id    = aws_apigatewayv2_api.webhook.id
   route_key = "GET /status/health"
+  target    = "integrations/${aws_apigatewayv2_integration.dashboard_status.id}"
+}
+
+resource "aws_apigatewayv2_route" "dashboard_registries" {
+  api_id    = aws_apigatewayv2_api.webhook.id
+  route_key = "GET /status/registries"
   target    = "integrations/${aws_apigatewayv2_integration.dashboard_status.id}"
 }
 
