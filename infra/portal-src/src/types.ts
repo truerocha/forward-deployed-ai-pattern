@@ -20,6 +20,7 @@ export interface LogEntry {
   agentName: string;
   message: string;
   type: 'info' | 'thought' | 'action' | 'error' | 'working' | 'complete' | 'system';
+  _sortKey?: string;
 }
 
 export interface SoftwareFactoryState {

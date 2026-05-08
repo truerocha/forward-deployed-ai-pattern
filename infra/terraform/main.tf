@@ -434,7 +434,7 @@ resource "aws_ecs_task_definition" "strands_agent" {
     # CannotPullContainerError on Fargate due to manifest resolution failure).
     {
       name      = "adot-collector"
-      image     = "public.ecr.aws/aws-observability/aws-otel-collector:v0.40.0"
+      image     = "${aws_ecr_repository.strands_agent.repository_url}:adot-v0.40.0"
       essential = false
 
       command = ["--config=/etc/ecs/ecs-xray.yaml"]

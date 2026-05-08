@@ -355,14 +355,49 @@ export default function App() {
           )}
 
           {activeView === 'gates' && (
-            <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-4 overflow-hidden">
-              <BranchEvaluationCard report={factoryData?.branch_evaluation || null} />
-              <div className="flex flex-col items-center justify-center border border-border-main bg-bg-card rounded-2xl">
-                <ShieldCheck className="w-12 h-12 text-secondary-dynamic mb-4" />
-                <div className="text-center">
-                  <p className="text-dynamic font-medium mb-1">Gate Observability Matrix</p>
-                  <p className="text-secondary-dynamic font-mono text-[10px] uppercase tracking-widest">Awaiting Decision Flow for Project {factoryConfig.project_id}</p>
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <div className="flex justify-between items-center mb-6">
+                <div>
+                  <h2 className="text-xl font-medium text-dynamic">Quality Gates</h2>
+                  <p className="text-xs text-secondary-dynamic font-mono">Pipeline Gate Results (Real-Time)</p>
                 </div>
+              </div>
+              <div className="flex-1 overflow-y-auto pr-2 scrollbar-thin space-y-3">
+                {tasks.filter((t: any) => t.events?.some((e: any) => e.type === 'gate')).length === 0 && (
+                  <div className="h-full flex items-center justify-center flex-col gap-3 opacity-40">
+                    <ShieldCheck className="w-10 h-10" />
+                    <p className="text-sm font-mono uppercase tracking-widest">Awaiting Gate Events</p>
+                    <p className="text-[10px] text-secondary-dynamic">Gates fire during task execution (DoR, Concurrency, Adversarial, Ship Readiness)</p>
+                  </div>
+                )}
+                {tasks.filter((t: any) => t.events?.some((e: any) => e.type === 'gate')).map((task: any) => (
+                  <div key={task.task_id} className="bg-bg-card border border-border-main rounded-xl p-4">
+                    <div className="flex justify-between items-center mb-3">
+                      <span className="text-xs font-bold text-dynamic">{task.title}</span>
+                      <span className="text-[9px] font-mono text-secondary-dynamic">{task.task_id}</span>
+                    </div>
+                    <div className="space-y-2">
+                      {task.events.filter((e: any) => e.type === 'gate').map((gate: any, idx: number) => (
+                        <div key={idx} className={`flex items-center gap-3 p-2 rounded-lg border ${
+                          gate.gate_result === 'pass' ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-red-500/5 border-red-500/20'
+                        }`}>
+                          {gate.gate_result === 'pass' ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                          ) : (
+                            <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <span className="text-[10px] font-bold text-dynamic">{gate.gate_name || 'gate'}</span>
+                            <p className="text-[9px] text-secondary-dynamic truncate">{gate.msg}</p>
+                          </div>
+                          <span className={`text-[9px] font-mono font-bold uppercase ${
+                            gate.gate_result === 'pass' ? 'text-emerald-400' : 'text-red-400'
+                          }`}>{gate.gate_result}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}
