@@ -72,9 +72,9 @@ This document merges four complementary inputs into a single coherent, deploymen
 |-----|----------|-----------------|-------------|------------|----------|
 | 2.01 | Implement fidelity_score.py | `src/core/brain_sim/fidelity_score.py` | CREATE | 1.05 (metrics table) | ✅ |
 | 2.02 | Implement emulation_classifier.py | `src/core/brain_sim/emulation_classifier.py` | CREATE | 2.01 | ✅ |
-| 2.03 | Implement context_hierarchy.py | `src/core/brain_sim/context_hierarchy.py` | CREATE | 1.04 (context-hierarchy table) | ☐ |
-| 2.04 | Implement organism_ladder.py | `src/core/brain_sim/organism_ladder.py` | CREATE | 1.07 (organism table) | ☐ |
-| 2.05 | Implement brain_sim_metrics.py | `src/core/brain_sim/brain_sim_metrics.py` | CREATE | 2.01, 2.02 | ☐ |
+| 2.03 | Implement context_hierarchy.py | `src/core/brain_sim/context_hierarchy.py` | CREATE | 1.04 (context-hierarchy table) | ✅ |
+| 2.04 | Implement organism_ladder.py | `src/core/brain_sim/organism_ladder.py` | CREATE | 1.07 (organism table) | ✅ |
+| 2.05 | Implement brain_sim_metrics.py | `src/core/brain_sim/brain_sim_metrics.py` | CREATE | 2.01, 2.02 | ✅ |
 | 2.06 | Create fde-fidelity-agent prompt | `src/agents/fidelity/prompt.md` | CREATE | 2.01-2.05 | ☐ |
 | 2.07 | Create fde-fidelity-agent ECS task def | `infra/terraform/modules/ecs/fidelity_agent_task_def.tf` | CREATE | 2.06, 1.09 | ☐ |
 | 2.08 | Implement user_value_validator.py (DORA C6) | `src/core/governance/user_value_validator.py` | CREATE | None | ☐ |
