@@ -40,3 +40,6 @@ scripts/mirror-push.sh
 scripts/hooks/
 docs/internal/mirror-automation-pattern.md
 Makefile
+
+# Internal AWS documents - not for public repos
+docs/example/*.pdf
