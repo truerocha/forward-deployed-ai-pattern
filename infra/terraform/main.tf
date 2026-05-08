@@ -404,6 +404,10 @@ resource "aws_ecs_task_definition" "strands_agent" {
         { name = "OTEL_SERVICE_NAME", value = "${local.name_prefix}-strands-agent" },
         { name = "OTEL_RESOURCE_ATTRIBUTES", value = "deployment.environment=${var.environment},service.namespace=fde-factory" },
         { name = "OTEL_SEMCONV_STABILITY_OPT_IN", value = "gen_ai_latest_experimental" },
+        # ADR-019: Agentic Squad mode
+        { name = "SQUAD_MODE", value = "dynamic" },
+        { name = "FDE_AGENT_NAME", value = "FDE Squad Leader" },
+        { name = "FDE_AGENT_EMAIL", value = "fde-squad@factory.local" },
       ]
 
       secrets = [
