@@ -44,8 +44,8 @@ This document merges four complementary inputs into a single coherent, deploymen
 | 1.08 | Create DynamoDB table: fde-dev-knowledge | `infra/terraform/modules/dynamodb/knowledge.tf` | CREATE | Pre-flight checks | ✅ |
 | 1.09 | Create parametrized Agent ECS Task Definition | `infra/terraform/modules/ecs/agent_task_def.tf` | CREATE | 1.01, 1.03 | ✅ |
 | 1.10 | Create Orchestrator ECS Task Definition | `infra/terraform/modules/ecs/orchestrator_task_def.tf` | CREATE | 1.09 | ✅ |
-| 1.11 | Implement distributed_orchestrator.py | `src/core/orchestration/distributed_orchestrator.py` | CREATE | 1.10 | ☐ |
-| 1.12 | Implement agent_runner.py | `src/core/orchestration/agent_runner.py` | CREATE | 1.09 | ☐ |
+| 1.11 | Implement distributed_orchestrator.py | `src/core/orchestration/distributed_orchestrator.py` | CREATE | 1.10 | ✅ |
+| 1.12 | Implement agent_runner.py | `src/core/orchestration/agent_runner.py` | CREATE | 1.09 | ✅ |
 | 1.13 | Implement cost_tracker.py | `src/core/metrics/cost_tracker.py` | CREATE | 1.05 | ☐ |
 | 1.14 | Update dora_metrics.py (autonomy_level dimension) | `src/core/metrics/dora_metrics.py` | MODIFY | 1.05 | ☐ |
 | 1.15 | Implement verification_metrics.py | `src/core/metrics/verification_metrics.py` | CREATE | 1.05 | ☐ |
