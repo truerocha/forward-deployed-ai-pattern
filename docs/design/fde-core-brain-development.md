@@ -93,12 +93,12 @@ This document merges four complementary inputs into a single coherent, deploymen
 | 3.04 | Implement query_api.py | `src/core/knowledge/query_api.py` | CREATE | 3.03 | ✅ |
 | 3.05 | Implement knowledge_annotation.py | `src/core/knowledge/knowledge_annotation.py` | CREATE | 1.08 (knowledge table) | ✅ |
 | 3.06 | Implement data_quality_scorer.py (DORA C2) | `src/core/knowledge/data_quality_scorer.py` | CREATE | 3.05 | ✅ |
-| 3.07 | Implement perturbation_engine.py | `src/core/brain_sim/perturbation_engine.py` | CREATE | 1.01 (EFS) | ☐ |
-| 3.08 | Implement behavioral_benchmark.py | `src/core/brain_sim/behavioral_benchmark.py` | CREATE | 1.01 (EFS), 2.01 | ☐ |
-| 3.09 | Implement memory_manager.py (DynamoDB backend) | `src/core/memory/memory_manager.py` | CREATE | 1.06 (memory table) | ☐ |
-| 3.10 | Implement semantic_store.py (Bedrock KB) | `src/core/memory/semantic_store.py` | CREATE | 3.09, 3.16 | ☐ |
-| 3.11 | Implement context_engineer.py | `src/core/memory/context_engineer.py` | CREATE | 3.09, 3.10 | ☐ |
-| 3.12 | Create memory migration script | `scripts/migrate_memory.py` | CREATE | 3.09 | ☐ |
+| 3.07 | Implement perturbation_engine.py | `src/core/brain_sim/perturbation_engine.py` | CREATE | 1.01 (EFS) | ✅ |
+| 3.08 | Implement behavioral_benchmark.py | `src/core/brain_sim/behavioral_benchmark.py` | CREATE | 1.01 (EFS), 2.01 | ✅ |
+| 3.09 | Implement memory_manager.py (DynamoDB backend) | `src/core/memory/memory_manager.py` | CREATE | 1.06 (memory table) | ✅ |
+| 3.10 | Implement semantic_store.py (Bedrock KB) | `src/core/memory/semantic_store.py` | CREATE | 3.09, 3.16 | ✅ |
+| 3.11 | Implement context_engineer.py | `src/core/memory/context_engineer.py` | CREATE | 3.09, 3.10 | ✅ |
+| 3.12 | Create memory migration script | `scripts/migrate_memory.py` | CREATE | 3.09 | ✅ |
 | 3.13 | Implement system_maturity_scorer.py (DORA 7-cap) | `src/core/governance/system_maturity_scorer.py` | CREATE | 1.05 (metrics table) | ☐ |
 | 3.14 | Implement gate_optimizer.py | `src/core/governance/gate_optimizer.py` | CREATE | 1.05 (metrics table) | ☐ |
 | 3.15 | Update repo_onboarding_agent (maturity + archetype) | `src/agents/onboarding/repo_onboarding_agent.py` | MODIFY | 3.13 | ☐ |
