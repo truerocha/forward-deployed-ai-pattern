@@ -259,7 +259,7 @@ export default function App() {
                   </div>
                 )}
                 {tasks.map((task: any) => (
-                  <div key={task.task_id} className="bg-black/5 dark:bg-black/30 border border-border-main rounded-xl p-4 hover:border-aws-orange/30 transition-all">
+                  <div key={task.task_id} className="bg-bg-card border border-border-main rounded-xl p-4 hover:border-aws-orange/30 transition-all">
                     <div className="flex justify-between items-start mb-2">
                       <div className="flex items-center gap-2">
                         {task.status === 'running' || task.status === 'IN_PROGRESS' ? (
@@ -320,11 +320,11 @@ export default function App() {
           {activeView === 'gates' && (
             <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-4 overflow-hidden">
               <BranchEvaluationCard report={factoryData?.branch_evaluation || null} />
-              <div className="flex flex-col items-center justify-center border border-white/5 bg-black/20 rounded-2xl">
-                <ShieldCheck className="w-12 h-12 text-slate-700 mb-4" />
+              <div className="flex flex-col items-center justify-center border border-border-main bg-bg-card rounded-2xl">
+                <ShieldCheck className="w-12 h-12 text-secondary-dynamic mb-4" />
                 <div className="text-center">
-                  <p className="text-white font-medium mb-1">Gate Observability Matrix</p>
-                  <p className="text-slate-500 font-mono text-[10px] uppercase tracking-widest">Awaiting Decision Flow for Project {factoryConfig.project_id}</p>
+                  <p className="text-dynamic font-medium mb-1">Gate Observability Matrix</p>
+                  <p className="text-secondary-dynamic font-mono text-[10px] uppercase tracking-widest">Awaiting Decision Flow for Project {factoryConfig.project_id}</p>
                 </div>
               </div>
             </div>
