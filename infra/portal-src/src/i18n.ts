@@ -19,9 +19,9 @@ const resources = {
         "catalog": "Catalog"
       },
       "pipeline": {
-        "title": "Workspace Orchestration",
-        "subtitle": "Engineering Amplification Engine",
-        "awaiting_signal": "Awaiting Pipeline Signal",
+        "title": "Task Pipeline",
+        "subtitle": "Squad Execution Flow",
+        "awaiting_signal": "Awaiting Task Signal",
         "placeholder": "Enter architectural instruction or refinement for Agents...",
         "interact": "Interact",
         "processing": "Processing",
@@ -36,7 +36,7 @@ const resources = {
       },
       "health": {
         "title": "Component Health",
-        "subtitle": "CODE_FACTORY INTEGRITY MESH",
+        "subtitle": "Live Infrastructure Status",
         "resynced": "RESYNCED",
         "active": "Active",
         "degraded": "Degraded",
@@ -47,12 +47,12 @@ const resources = {
         "subtitle": "Immutable Factory Parameters (Read-Only)"
       },
       "agents": {
-        "title": "Autonomous Units",
-        "subtitle": "Instance Status: us-east-1",
-        "autonomy_level": "L5 FULL_AUTONOMY",
-        "pipeline_mode": "Pipeline Hybrid Mode",
-        "onboarding": "Onboarding...",
-        "analyzing": "Analyzing Workflow...",
+        "title": "Squad Agents",
+        "subtitle": "Active Instances: us-east-1",
+        "autonomy_level": "SQUAD_MODE: DYNAMIC",
+        "pipeline_mode": "ADR-019 Squad Architecture",
+        "onboarding": "Initializing...",
+        "analyzing": "Executing...",
         "standby": "Standby"
       },
       "terminal": {

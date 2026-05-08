@@ -1,18 +1,7 @@
 /**
  * Factory Service — Connects to the Code Factory Status API.
- *
- * Reads the API URL from the <meta name="factory-api-url"> tag injected
- * by the deploy script. No external AI APIs — all intelligence runs
- * server-side in ECS via Bedrock.
+ * All data comes from the real API. No simulations.
  */
-
-export type AgentRole = 'planner' | 'coder' | 'reviewer';
-
-export interface AgentResponse {
-  message: string;
-  code?: string;
-  thoughts: string[];
-}
 
 export interface TaskEvent {
   ts: string;
@@ -112,29 +101,4 @@ export async function fetchHealth(): Promise<{ status: string; checks: { name: s
   }
 }
 
-/**
- * Simulated agent step for demo/offline mode.
- * In production, agents run server-side in ECS — this is only for UI preview.
- */
-export async function runAgentStep(role: AgentRole, context: string, _previousOutput?: string): Promise<AgentResponse> {
-  // Simulate a brief delay for UI feedback
-  await new Promise(r => setTimeout(r, 800));
 
-  const responses: Record<AgentRole, AgentResponse> = {
-    planner: {
-      message: `[Planner] Analyzing requirements for: ${context.substring(0, 50)}...`,
-      thoughts: ['Decomposing task into architectural manifest', 'Identifying FDE pipeline stages']
-    },
-    coder: {
-      message: `[Engineer] Implementing solution following FDE patterns...`,
-      code: '// Implementation generated server-side via Bedrock',
-      thoughts: ['Applying AWS ProServe standards', 'Ensuring scalability patterns']
-    },
-    reviewer: {
-      message: `[Reviewer] Security and resilience audit complete.`,
-      thoughts: ['Checked AWS best practices', 'Validated FDE integrity safeguards']
-    }
-  };
-
-  return responses[role];
-}
