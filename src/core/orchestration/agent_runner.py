@@ -218,12 +218,31 @@ class AgentRunner:
             pass  # Non-fatal — health check will retry
 
     def _load_scd_context(self) -> dict[str, Any]:
-        """Load relevant SCD sections for this agent from DynamoDB."""
+        """Load relevant SCD sections for this agent from DynamoDB.
+
+        If AGENT_ACCESS_LIST is set (Conductor topology enforcement),
+        only loads the sections specified in the access list.
+        Otherwise, loads all available previous stage outputs (backward compat).
+
+        Ref: ADR-020 — Communication topology via access lists
+        """
         if not self._config.scd_table:
             return {}
 
         table = self._dynamodb.Table(self._config.scd_table)
+
+        # Parse Conductor access list if available
+        access_list_raw = os.environ.get("AGENT_ACCESS_LIST", "")
+        access_list: list = []
+        if access_list_raw:
+            try:
+                access_list = json.loads(access_list_raw)
+            except json.JSONDecodeError:
+                access_list = []
+
         try:
+            context = {}
+
             # Always load context_enrichment (available to all agents)
             response = table.get_item(
                 Key={
@@ -231,14 +250,23 @@ class AgentRunner:
                     "section_key": "context_enrichment",
                 }
             )
-            context = {}
             if "Item" in response:
                 data_raw = response["Item"].get("data", "{}")
                 context["context_enrichment"] = json.loads(data_raw)
 
-            # Load previous stage outputs (if not stage 1)
+            # Load previous stage outputs based on access list
             if self._config.stage > 1:
-                for prev_stage in range(1, self._config.stage):
+                if "all" in access_list or not access_list:
+                    # Full access: load all previous stages (original behavior)
+                    stages_to_load = range(1, self._config.stage)
+                else:
+                    # Conductor topology: load only specified stages
+                    # Access list contains step indices (0-based), stages are 1-based
+                    stages_to_load = [idx + 1 for idx in access_list if isinstance(idx, int)]
+
+                for prev_stage in stages_to_load:
+                    if prev_stage >= self._config.stage:
+                        continue  # Cannot access future stages
                     section_key = f"stage_{prev_stage}_output"
                     resp = table.get_item(
                         Key={
@@ -342,20 +370,46 @@ class AgentRunner:
     def _build_system_prompt(
         self, scd_context: dict[str, Any], manifest_data: dict[str, Any]
     ) -> str:
-        """Build the system prompt for this agent based on role and context."""
+        """Build the system prompt for this agent based on role and context.
+
+        If a Conductor-generated subtask instruction is available (via
+        AGENT_SUBTASK env var), it is used as the primary instruction.
+        This implements the Conductor paper's key finding: focused subtask
+        instructions outperform generic role prompts.
+
+        Ref: ADR-020 (Conductor Orchestration Pattern)
+        """
         context_enrichment = scd_context.get("context_enrichment", {})
         organism = context_enrichment.get("organism_level", "O1")
         user_value = context_enrichment.get("user_value_statement", "")
 
-        return (
+        # Check for Conductor-generated focused subtask instruction
+        subtask = os.environ.get("AGENT_SUBTASK", "")
+
+        base_prompt = (
             f"You are a Forward Deployed AI Engineer operating as role: {self._config.role}.\n"
             f"Stage: {self._config.stage} | Organism Level: {organism}\n"
             f"User Value: {user_value}\n\n"
             f"Task ID: {self._config.task_id}\n"
-            f"Knowledge Context: {json.dumps(self._config.knowledge_context, indent=2)}\n\n"
-            f"You must produce structured JSON output with your findings/results.\n"
-            f"Follow the governance rules for your role. Do not exceed your scope."
         )
+
+        if subtask:
+            # Conductor-generated focused instruction takes priority
+            base_prompt += (
+                f"\n## Your Specific Assignment (from Conductor)\n"
+                f"{subtask}\n\n"
+                f"Execute this specific subtask. Produce structured JSON output.\n"
+                f"Follow the governance rules for your role. Do not exceed your scope.\n"
+            )
+        else:
+            # Fallback to generic role-based prompt (pre-Conductor behavior)
+            base_prompt += (
+                f"Knowledge Context: {json.dumps(self._config.knowledge_context, indent=2)}\n\n"
+                f"You must produce structured JSON output with your findings/results.\n"
+                f"Follow the governance rules for your role. Do not exceed your scope."
+            )
+
+        return base_prompt
 
     def _build_user_message(self, scd_context: dict[str, Any]) -> str:
         """Build the user message from SCD context and previous stage outputs."""

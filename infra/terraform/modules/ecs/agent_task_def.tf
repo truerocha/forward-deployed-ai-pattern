@@ -16,6 +16,9 @@
 #   - ORGANISM_LEVEL: O1-O5 complexity classification
 #   - KNOWLEDGE_CONTEXT: serialized knowledge annotations
 #   - USER_VALUE_STATEMENT: extracted user value for DoD validation
+#   - AGENT_SUBTASK: Conductor-generated focused instruction (ADR-020)
+#   - AGENT_ACCESS_LIST: Communication topology as JSON array (ADR-020)
+#   - AGENT_STEP_INDEX: Step position in Conductor workflow plan (ADR-020)
 #
 # EFS mount: /workspaces/{task_id}/{repo}/ for shared file access.
 # Networking: Private subnets only, egress to Bedrock + GitHub/GitLab.
@@ -179,6 +182,10 @@ resource "aws_ecs_task_definition" "agent" {
         # AGENT_ROLE, AGENT_STAGE, MODEL_TIER, TASK_ID,
         # SQUAD_MANIFEST_KEY, ORGANISM_LEVEL, KNOWLEDGE_CONTEXT,
         # USER_VALUE_STATEMENT
+        # Conductor-injected (ADR-020):
+        # AGENT_SUBTASK — focused instruction from Conductor plan
+        # AGENT_ACCESS_LIST — communication topology (JSON array)
+        # AGENT_STEP_INDEX — step position in workflow plan
         { name = "OTEL_EXPORTER_OTLP_ENDPOINT", value = "http://localhost:4318" },
         { name = "OTEL_SERVICE_NAME", value = "${var.name_prefix}-squad-agent" },
         { name = "OTEL_RESOURCE_ATTRIBUTES", value = "deployment.environment=${var.environment},service.namespace=fde-factory" },

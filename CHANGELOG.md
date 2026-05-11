@@ -6,7 +6,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ---
 
-## [Unreleased] — 2026-05-08
+## [Unreleased] — 2026-05-11
+
+### Added — Conductor Orchestration Pattern (ADR-020)
+- `src/core/orchestration/conductor.py` — New Conductor engine implementing the RL Conductor pattern (Nielsen et al., ICLR 2026, arXiv:2512.04388v5). Generates dynamic WorkflowPlans with focused subtask instructions, communication topologies (access lists), task-difficulty adaptivity via organism ladder, and bounded recursive self-referential scaling (max depth 2).
+- `src/core/orchestration/conductor_integration.py` — Integration layer bridging Conductor with DistributedOrchestrator. Feature flag `CONDUCTOR_ENABLED` (default true for O3+ tasks). Handles recursive refinement loop, manifest conversion, and subtask env injection.
+- `docs/design/conductor-orchestration-pattern.md` — Design document mapping the paper's concepts to FDE implementation: topology types (sequential, parallel, tree, debate, recursive), agent capability matching, confidence-based recursion, and integration with DistributedOrchestrator.
+- `docs/adr/ADR-020-conductor-orchestration-pattern.md` — Architecture decision record documenting the choice of LLM-generated plans over static topology libraries or full RL training.
+- `src/core/orchestration/__init__.py` — Updated exports to include Conductor, WorkflowPlan, WorkflowStep, TopologyType, should_use_conductor, generate_conductor_manifest, execute_with_conductor.
+
+### Changed — Agent Runner Conductor Integration
+- `src/core/orchestration/agent_runner.py` — `_build_system_prompt()` now reads `AGENT_SUBTASK` env var for Conductor-generated focused instructions (falls back to generic role prompt when absent). `_load_scd_context()` now respects `AGENT_ACCESS_LIST` env var for communication topology enforcement (falls back to loading all previous stages when absent). Both changes are backward-compatible.
+
+---
+
+## [Previous] — 2026-05-08
 
 ### Fixed — COE-020: ECS Platform Mismatch + Multi-Model Infra + EventBridge Drift
 - `Makefile` — Added `docker-build`, `docker-build-adot`, `docker-build-onboarding`, `docker-push-all`, `docker-deploy` targets. All enforce `--platform linux/amd64` for Fargate compatibility. ECR URL resolved from Terraform outputs.
