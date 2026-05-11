@@ -82,6 +82,15 @@ class DashboardCallback:
         if tool_use:
             self._handle_tool_start(tool_use)
 
+        # Handle tool input delta (captures what the tool is doing)
+        tool_delta = (
+            event.get("contentBlockDelta", {})
+            .get("delta", {})
+            .get("toolUse", {})
+        )
+        if tool_delta and "input" in tool_delta:
+            self._handle_tool_input(tool_delta["input"])
+
         # Handle reasoning text (model's thinking — summarize, don't expose raw)
         if reasoning_text:
             self._handle_reasoning(reasoning_text)
@@ -109,6 +118,11 @@ class DashboardCallback:
         self._tool_count += 1
         tool_name = tool_use.get("name", "unknown")
         tool_input = tool_use.get("toolUseId", "")
+
+        # Track current tool for input parsing
+        self._last_tool_name = tool_name
+        self._tool_input_acc = ""
+        self._tool_context_emitted = False
 
         # -- MILESTONE tools: always emit with context --
         milestone_tools = {
@@ -181,6 +195,80 @@ class DashboardCallback:
                     "msg": f"{action}: {self._context_count} file operations completed",
                 })
             self._context_count = 0
+
+    def _handle_tool_input(self, input_chunk: str) -> None:
+        """Accumulate tool input and extract context from shell commands.
+
+        The Strands SDK streams tool input as partial JSON chunks.
+        We accumulate and when we detect a meaningful command,
+        extract what the agent is doing (file path, git op, test run).
+        """
+        if not hasattr(self, "_tool_input_acc"):
+            self._tool_input_acc = ""
+            self._tool_context_emitted = False
+
+        self._tool_input_acc += input_chunk
+
+        # Only parse for run_shell_command (the generic tool)
+        if not hasattr(self, "_last_tool_name") or self._last_tool_name != "run_shell_command":
+            return
+
+        # Don't emit more than one context event per tool call
+        if self._tool_context_emitted:
+            return
+
+        # Try to extract meaningful context
+        context = self._classify_shell_command(self._tool_input_acc)
+        if context:
+            self._tool_context_emitted = True
+            self._buffer.append({"type": "info", "msg": context})
+            self._maybe_flush()
+
+    @staticmethod
+    def _classify_shell_command(partial_input: str) -> str:
+        """Classify a shell command into a human-readable action."""
+        inp = partial_input.lower()
+
+        # Git operations
+        if "git commit" in inp:
+            return "Committing changes..."
+        if "git add" in inp:
+            return "Staging files..."
+        if "git diff" in inp:
+            return "Reviewing changes..."
+        if "git status" in inp:
+            return "Checking workspace status..."
+
+        # Test operations
+        if "pytest" in inp or "python -m pytest" in inp:
+            return "Running tests..."
+        if "npm test" in inp or "npm run test" in inp:
+            return "Running tests..."
+
+        # Build/install
+        if "pip install" in inp:
+            return "Installing dependencies..."
+        if "npm install" in inp:
+            return "Installing dependencies..."
+
+        # File operations via shell
+        if "cat " in inp or "head " in inp:
+            for token in partial_input.split():
+                if "/" in token and not token.startswith("-"):
+                    path = token.strip("'\"").split("/")[-1]
+                    if path and len(path) > 2:
+                        return f"Reading: {path}"
+                    break
+        if "mkdir" in inp:
+            return "Creating directory..."
+
+        # Lint/format
+        if "ruff" in inp or "black" in inp or "flake8" in inp:
+            return "Linting code..."
+        if "prettier" in inp or "eslint" in inp:
+            return "Formatting code..."
+
+        return ""
 
     def _handle_reasoning(self, text: str) -> None:
         """Handle reasoning text — capture key decision markers only."""
