@@ -30,13 +30,22 @@ export interface DoraMetrics {
  *
  * The API returns a flat DORA summary (lead_time_avg_ms, success_rate_pct, etc.)
  * The DoraCard expects metrics broken down by autonomy level (L1-L4).
- * Since the API doesn't yet provide per-level breakdown, we project the
- * aggregate metrics into the detected level and synthesize estimates for others.
+ *
+ * Returns null when no tasks have completed (avoids misleading zeros).
+ * The DoraCard renders a proper "No metrics available" empty state for null.
  */
 export function mapDoraMetrics(data: DashboardData | null): DoraMetrics | null {
   if (!data?.dora) return null;
 
   const { dora, metrics } = data;
+
+  // If no tasks have completed, return null to trigger empty state
+  // This prevents showing misleading 0.0 values
+  const hasCompletedTasks = (metrics.completed_24h || 0) > 0;
+  if (!hasCompletedTasks && (dora.lead_time_avg_ms || 0) === 0) {
+    return null;
+  }
+
   const leadTimeHours = (dora.lead_time_avg_ms || 0) / 3_600_000;
   const throughput = dora.throughput_24h || 0;
   const cfr = dora.change_failure_rate_pct || 0;

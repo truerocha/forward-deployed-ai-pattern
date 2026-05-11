@@ -94,12 +94,46 @@ class DashboardCallback:
             self._handle_complete()
 
     def _handle_tool_start(self, tool_use: dict) -> None:
-        """Handle a tool invocation event."""
+        """Handle a tool invocation event.
+
+        Filters low-value tool calls (shell commands, file reads) and only
+        surfaces meaningful tool usage to the dashboard. Aggregates routine
+        operations into periodic summary events.
+
+        Signal vs Noise:
+          HIGH signal: create_pull_request, run_tests, bedrock_invoke, git_push
+          LOW signal: run_shell_command, read_file, write_file, list_directory, str_replace
+
+        Low-signal tools are counted but not individually emitted.
+        A summary is emitted every 10 low-signal calls.
+        """
         self._tool_count += 1
         tool_name = tool_use.get("name", "unknown")
-        summary = f"Tool #{self._tool_count}: {tool_name}"
-        self._buffer.append({"type": "tool", "msg": summary[:200]})
-        self._maybe_flush()
+
+        # High-signal tools — always emit
+        high_signal_tools = {
+            "create_pull_request", "create_github_pull_request",
+            "create_gitlab_merge_request", "run_tests", "pytest",
+            "bedrock_invoke", "converse", "git_push", "git_commit",
+            "human_input", "create_branch",
+        }
+
+        if tool_name in high_signal_tools:
+            summary = f"\u25B6 {tool_name}"
+            self._buffer.append({"type": "tool", "msg": summary[:200]})
+            self._maybe_flush()
+            return
+
+        # Low-signal tools — aggregate into periodic summaries
+        if not hasattr(self, "_low_signal_count"):
+            self._low_signal_count = 0
+        self._low_signal_count += 1
+
+        # Emit summary every 10 low-signal calls
+        if self._low_signal_count % 10 == 0:
+            summary = f"Processing ({self._low_signal_count} operations)..."
+            self._buffer.append({"type": "info", "msg": summary})
+            self._maybe_flush()
 
     def _handle_reasoning(self, text: str) -> None:
         """Handle reasoning text — capture key decision markers only."""
