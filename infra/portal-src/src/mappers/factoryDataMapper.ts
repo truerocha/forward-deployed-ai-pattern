@@ -375,10 +375,22 @@ function isToolCallNoise(event: TaskEvent): boolean {
 /**
  * Formats an event into a human-readable message for the timeline.
  * Extracts the meaningful content from raw event messages.
+ *
+ * For "reasoning" type events, renders the criteria and context fields
+ * to provide explainability (WHY decisions were made).
  */
 function formatEventMessage(event: TaskEvent, taskId: string): string {
   const prefix = `[${taskId.slice(-8)}]`;
   const msg = event.msg || '';
+
+  // Reasoning events — show decision rationale (explainability layer)
+  if (event.type === 'reasoning') {
+    let formatted = `${prefix} ${msg}`;
+    if (event.criteria) {
+      formatted += ` \u2014 ${event.criteria.slice(0, 120)}`;
+    }
+    return formatted;
+  }
 
   // Gate events — show gate name and result
   if (event.type === 'gate') {
@@ -421,6 +433,7 @@ function formatEventMessage(event: TaskEvent, taskId: string): string {
 }
 
 function mapEventType(event: TaskEvent): TimelineEvent['type'] {
+  if (event.type === 'reasoning') return 'stage_start';  // Reasoning events are milestones
   if (event.msg?.includes('Stage started') || event.msg?.includes('started:')) return 'stage_start';
   if (event.msg?.includes('Stage complete') || event.msg?.includes('complete:')) return 'stage_complete';
   if (event.type === 'error') return 'stage_error';

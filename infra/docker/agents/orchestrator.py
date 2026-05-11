@@ -561,9 +561,15 @@ class Orchestrator:
             task_id, len(all_agents), len(stages),
         )
         task_queue.append_task_event(
-            task_id, "system",
-            f"Squad composed: {' → '.join(all_agents)} (dynamic mode)",
+            task_id, "reasoning",
+            f"Squad composed: {len(all_agents)} agents across {len(stages)} stages",
             phase="intake",
+            criteria=f"Task type \u2192 squad composition: {' \u2192 '.join(all_agents)}",
+            context=(
+                f"Topology: sequential stages with parallel agents within stage. "
+                f"Each agent reads only its permitted SCD sections (isolation). "
+                f"Model selection: capability-matched per agent role."
+            ),
         )
 
         results: list[dict] = []
@@ -621,12 +627,18 @@ class Orchestrator:
                 )
                 self._registry.register(defn)
 
-                # Update dashboard
+                # Update dashboard with reasoning about WHY this agent
                 task_queue.update_task_stage(task_id, agent_role.split("-")[0])
                 task_queue.append_task_event(
-                    task_id, "system",
-                    f"▶ Squad agent: {agent_role}",
+                    task_id, "reasoning",
+                    f"\u25B6 Executing: {agent_role}",
                     phase=agent_role,
+                    criteria=f"Role: {capability.get('description', agent_role)} | Model: {model_id.split('/')[-1] if '/' in model_id else model_id}",
+                    context=(
+                        f"Tools: {tool_key} ({len(tools)} available). "
+                        f"SCD access: {'enriched context from prior stages' if scd_context else 'no prior context (first stage)'}. "
+                        f"Constraints: {len(constraints)} active."
+                    ),
                 )
 
                 # Create callback and execute
@@ -650,17 +662,24 @@ class Orchestrator:
                     })
 
                     task_queue.append_task_event(
-                        task_id, "system",
-                        f"✅ {agent_role} complete ({len(message)} chars)",
+                        task_id, "reasoning",
+                        f"\u2713 {agent_role} complete",
                         phase=agent_role,
+                        criteria=f"Output: {len(message)} chars written to SCD section '{agent_role}'",
+                        context=f"Result persisted to S3. Next stage can read this agent's output via SCD.",
                     )
 
                 except Exception as e:
                     logger.error("Squad agent %s failed: %s", agent_role, e)
                     task_queue.append_task_event(
-                        task_id, "error",
-                        f"❌ {agent_role} failed: {str(e)[:120]}",
+                        task_id, "reasoning",
+                        f"\u2717 {agent_role} failed: {str(e)[:80]}",
                         phase=agent_role,
+                        criteria=f"Exception type: {type(e).__name__}",
+                        context=(
+                            f"Agent failed during execution. Pipeline continues with remaining agents "
+                            f"(graceful degradation). This agent's SCD section will be empty for downstream consumers."
+                        ),
                     )
                     results.append({
                         "agent_name": agent_role,
