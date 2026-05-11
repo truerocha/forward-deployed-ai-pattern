@@ -654,16 +654,23 @@ def _compute_dora_summary(items: list) -> dict:
 
 
 def _compute_elapsed(item: dict) -> int:
-    """Compute elapsed time in ms for running tasks."""
+    """Compute elapsed execution time in ms.
+
+    For running tasks: uses started_at (when container claimed the task),
+    NOT created_at (when webhook arrived). This gives accurate execution time.
+
+    For completed tasks: uses the pre-computed duration_ms field.
+    """
     if item.get("status") not in ("RUNNING", "IN_PROGRESS", "READY"):
         return int(item.get("duration_ms", 0))
 
-    created = item.get("created_at", "")
-    if not created:
+    # Prefer started_at (actual execution start) over created_at (webhook arrival)
+    start_field = item.get("started_at") or item.get("created_at", "")
+    if not start_field:
         return 0
 
     try:
-        start = datetime.fromisoformat(created.replace("Z", "+00:00"))
+        start = datetime.fromisoformat(start_field.replace("Z", "+00:00"))
         elapsed = (datetime.now(timezone.utc) - start).total_seconds() * 1000
         return int(elapsed)
     except (ValueError, TypeError):

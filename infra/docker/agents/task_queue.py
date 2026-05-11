@@ -70,7 +70,7 @@ def claim_task(task_id: str, agent_name: str) -> bool:
     try:
         table.update_item(
             Key={"task_id": task_id},
-            UpdateExpression="SET #s = :new_status, assigned_agent = :agent, updated_at = :now",
+            UpdateExpression="SET #s = :new_status, assigned_agent = :agent, started_at = :now, updated_at = :now",
             ConditionExpression="#s = :ready",
             ExpressionAttributeNames={"#s": "status"},
             ExpressionAttributeValues={":new_status": "IN_PROGRESS", ":agent": agent_name, ":ready": "READY", ":now": _now()},
@@ -348,13 +348,31 @@ def retry_queued_tasks(repo: str) -> list[str]:
 
 def complete_task(task_id: str, result: str) -> dict:
     table = _get_table()
+
+    # Calculate actual execution duration (started_at → now)
+    task = get_task(task_id)
+    started_at = task.get("started_at", "") if task else ""
+    duration_ms = 0
+    if started_at:
+        try:
+            from datetime import datetime, timezone
+            start = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+            duration_ms = int((datetime.now(timezone.utc) - start).total_seconds() * 1000)
+        except (ValueError, TypeError):
+            pass
+
     table.update_item(
         Key={"task_id": task_id},
-        UpdateExpression="SET #s = :status, #r = :result, updated_at = :now",
+        UpdateExpression="SET #s = :status, #r = :result, duration_ms = :dur, updated_at = :now",
         ExpressionAttributeNames={"#s": "status", "#r": "result"},
-        ExpressionAttributeValues={":status": "COMPLETED", ":result": result, ":now": _now()},
+        ExpressionAttributeValues={
+            ":status": "COMPLETED",
+            ":result": result,
+            ":dur": duration_ms,
+            ":now": _now(),
+        },
     )
-    logger.info("Task %s completed", task_id)
+    logger.info("Task %s completed (duration: %dms / %.1f min)", task_id, duration_ms, duration_ms / 60000)
 
     # Resolve DAG dependencies (existing behavior)
     promoted = _resolve_dependencies(task_id)
