@@ -56,8 +56,8 @@ const resources = {
         "standby": "Standby"
       },
       "terminal": {
-        "title": "Chain of Thought",
-        "subtitle": "Streaming Reasoning Timeline",
+        "title": "Pipeline Activity",
+        "subtitle": "Stage Transitions & Gate Results",
         "awaiting": "Awaiting activity..."
       },
       "branch_eval": {

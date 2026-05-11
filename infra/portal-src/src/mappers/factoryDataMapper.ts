@@ -267,6 +267,11 @@ export interface TimelineEvent {
  *
  * Transforms raw TaskEvent[] into the TimelineEvent[] format, mapping
  * event types to timeline display categories.
+ *
+ * Key improvement: filters out low-level tool calls (run_shell_command, etc.)
+ * and surfaces only meaningful pipeline events (stage transitions, gate results,
+ * agent milestones). Raw tool calls are aggregated into a single "processing"
+ * indicator rather than flooding the timeline.
  */
 export function mapLiveTimeline(data: DashboardData | null): TimelineEvent[] {
   if (!data?.tasks || data.tasks.length === 0) return [];
@@ -275,7 +280,6 @@ export function mapLiveTimeline(data: DashboardData | null): TimelineEvent[] {
   const activeTasks = [...data.tasks]
     .filter((t) => t.status === 'running' || t.events?.length > 0)
     .sort((a, b) => {
-      // Running tasks first, then by most recent event
       if (a.status === 'running' && b.status !== 'running') return -1;
       if (b.status === 'running' && a.status !== 'running') return 1;
       const aLast = a.events?.[a.events.length - 1]?.ts || '';
@@ -289,15 +293,49 @@ export function mapLiveTimeline(data: DashboardData | null): TimelineEvent[] {
   for (const task of activeTasks) {
     if (!task.events) continue;
 
+    // Track tool call count for aggregation
+    let pendingToolCalls = 0;
+    let lastToolCallTs = '';
+
     for (const event of task.events) {
+      // Filter: skip raw tool calls — aggregate them instead
+      if (isToolCallNoise(event)) {
+        pendingToolCalls++;
+        lastToolCallTs = event.ts;
+        continue;
+      }
+
+      // Flush aggregated tool calls as a single "processing" entry
+      if (pendingToolCalls > 0) {
+        timeline.push({
+          type: 'info',
+          timestamp: lastToolCallTs,
+          message: `[${task.task_id.slice(-8)}] Processing (${pendingToolCalls} operations)`,
+          status: 'success',
+        });
+        pendingToolCalls = 0;
+      }
+
+      // Map meaningful events with human-readable messages
       const timelineType = mapEventType(event);
       const timelineStatus = mapEventStatus(event, task.status);
+      const message = formatEventMessage(event, task.task_id);
 
       timeline.push({
         type: timelineType,
         timestamp: event.ts,
-        message: `[${task.task_id.slice(-8)}] ${event.msg || event.type}`,
+        message,
         status: timelineStatus,
+      });
+    }
+
+    // Flush remaining tool calls
+    if (pendingToolCalls > 0) {
+      timeline.push({
+        type: 'info',
+        timestamp: lastToolCallTs,
+        message: `[${task.task_id.slice(-8)}] Processing (${pendingToolCalls} operations)`,
+        status: task.status === 'running' ? 'running' : 'success',
       });
     }
   }
@@ -306,6 +344,71 @@ export function mapLiveTimeline(data: DashboardData | null): TimelineEvent[] {
   timeline.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 
   return timeline;
+}
+
+/**
+ * Determines if an event is low-level tool call noise that should be aggregated.
+ */
+function isToolCallNoise(event: TaskEvent): boolean {
+  const msg = (event.msg || '').toLowerCase();
+  const noisePatterns = [
+    'run_shell_command',
+    'tool #',
+    'tool_use',
+    'read_file',
+    'write_file',
+    'list_directory',
+    'str_replace',
+  ];
+  return noisePatterns.some((pattern) => msg.includes(pattern));
+}
+
+/**
+ * Formats an event into a human-readable message for the timeline.
+ * Extracts the meaningful content from raw event messages.
+ */
+function formatEventMessage(event: TaskEvent, taskId: string): string {
+  const prefix = `[${taskId.slice(-8)}]`;
+  const msg = event.msg || '';
+
+  // Gate events — show gate name and result
+  if (event.type === 'gate') {
+    const result = event.gate_result === 'pass' ? '\u2713' : event.gate_result === 'fail' ? '\u2717' : '\u26A0';
+    return `${prefix} Gate ${result} ${event.gate_name || 'unknown'}`;
+  }
+
+  // Stage events — extract stage name
+  if (msg.includes('Stage started') || msg.includes('started:')) {
+    const stageName = msg.replace(/.*started:?\s*/i, '').trim() || 'execution';
+    return `${prefix} \u25B6 Stage: ${stageName}`;
+  }
+  if (msg.includes('Stage complete') || msg.includes('complete:')) {
+    const stageName = msg.replace(/.*complete:?\s*/i, '').trim() || 'execution';
+    return `${prefix} \u2713 Stage complete: ${stageName}`;
+  }
+
+  // Error events — show error type
+  if (event.type === 'error') {
+    return `${prefix} \u2717 Error: ${msg.slice(0, 80)}`;
+  }
+
+  // Agent lifecycle events
+  if (msg.includes('Agent') || msg.includes('agent')) {
+    return `${prefix} ${msg.slice(0, 100)}`;
+  }
+
+  // Conductor events
+  if (msg.includes('Conductor') || msg.includes('topology') || msg.includes('plan')) {
+    return `${prefix} \uD83C\uDFBC ${msg.slice(0, 100)}`;
+  }
+
+  // Implementation milestones
+  if (msg.includes('PR') || msg.includes('commit') || msg.includes('push')) {
+    return `${prefix} \uD83D\uDCE6 ${msg.slice(0, 100)}`;
+  }
+
+  // Default: show first 100 chars of message
+  return `${prefix} ${msg.slice(0, 100)}`;
 }
 
 function mapEventType(event: TaskEvent): TimelineEvent['type'] {
