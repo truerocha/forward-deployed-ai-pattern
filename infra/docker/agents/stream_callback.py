@@ -57,6 +57,7 @@ class DashboardCallback:
     """
 
     task_id: str
+    agent_role: str = "fde-pipeline"
     _buffer: list = field(default_factory=list, init=False)
     _last_flush: float = field(default=0.0, init=False)
     _tool_count: int = field(default=0, init=False)
@@ -249,17 +250,18 @@ class DashboardCallback:
             self._flush()
 
     def _flush(self) -> None:
-        """Write buffered events to DynamoDB."""
+        """Write buffered events to DynamoDB with agent_role as phase."""
         if not self._buffer:
             return
 
-        # Write each buffered event (append_task_event handles non-blocking)
+        # Write each buffered event with phase=agent_role for correct labeling
         for event in self._buffer:
             try:
                 task_queue.append_task_event(
                     self.task_id,
                     event.get("type", "info"),
                     event.get("msg", ""),
+                    phase=self.agent_role,
                 )
             except Exception as e:
                 logger.warning("Failed to write callback event: %s", e)

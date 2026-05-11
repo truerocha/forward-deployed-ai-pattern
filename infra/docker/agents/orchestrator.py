@@ -642,7 +642,7 @@ class Orchestrator:
                 )
 
                 # Create callback and execute
-                callback = DashboardCallback(task_id=task_id)
+                callback = DashboardCallback(task_id=task_id, agent_role=agent_role)
 
                 try:
                     agent = self._registry.create_agent(agent_name, callback_handler=callback)
