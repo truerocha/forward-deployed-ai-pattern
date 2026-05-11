@@ -185,14 +185,15 @@ export default function App() {
     setActiveView(view);
   };
 
-  // Polling: real API data only
+  // Polling: real API data — 5s interval for near-real-time observability
+  // Matches the stream_callback flush interval (5s) for minimal delay
   useEffect(() => {
     let pollingInterval: NodeJS.Timeout;
     const startPolling = () => {
       pollingInterval = setInterval(() => {
         fetchHealth();
         fetchFactoryData();
-      }, 15000);
+      }, 5000);
     };
     const handleVisibility = () => {
       isTabActive.current = !document.hidden;
