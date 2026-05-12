@@ -450,7 +450,7 @@ export default function App() {
           )}
 
           {activeView === 'observability' && (
-            <div className="flex-1 flex flex-col overflow-hidden overflow-y-auto">
+            <div className="flex-1 flex flex-col overflow-hidden">
               <PersonaRouter onPersonaChange={(p) => setActivePersona(p)}>
                 <PersonaFilteredCards
                   persona={activePersona}

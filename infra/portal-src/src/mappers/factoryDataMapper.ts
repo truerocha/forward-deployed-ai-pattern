@@ -349,8 +349,8 @@ export function mapLiveTimeline(data: DashboardData | null): TimelineEvent[] {
     }
   }
 
-  // Sort chronologically
-  timeline.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  // Sort reverse-chronologically (newest first)
+  timeline.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 
   return timeline;
 }

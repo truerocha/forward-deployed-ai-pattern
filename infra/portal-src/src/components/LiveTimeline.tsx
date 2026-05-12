@@ -68,7 +68,7 @@ export const LiveTimeline: React.FC<LiveTimelineProps> = ({
 
   useEffect(() => {
     if (autoScroll && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      scrollRef.current.scrollTop = 0;
     }
   }, [events, autoScroll]);
 
@@ -89,7 +89,7 @@ export const LiveTimeline: React.FC<LiveTimelineProps> = ({
             <WifiOff className="w-3 h-3 text-red-400" aria-hidden="true" />
           )}
           <span className={`text-[9px] font-mono ${wsConnected ? 'text-emerald-400' : 'text-red-400'}`}>
-            {wsConnected ? 'LIVE' : 'DISCONNECTED'}
+            {wsConnected ? 'POLLING' : 'DISCONNECTED'}
           </span>
         </div>
       </div>

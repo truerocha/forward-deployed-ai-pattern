@@ -55,7 +55,34 @@ const MetricTile: React.FC<{
 );
 
 export const DoraCard: React.FC<DoraCardProps> = ({ metrics, selectedLevel, onLevelChange }) => {
-  const activeLevel = selectedLevel || LEVELS[0];
+  // Determine the API-detected level from the metrics (find the level with real trend, not 'flat')
+  const detectedLevel = React.useMemo(() => {
+    if (!metrics?.by_level) return LEVELS[0];
+    // The active level from the API has a non-flat trend (set by mapDoraMetrics)
+    const realLevel = Object.entries(metrics.by_level).find(
+      ([_, m]) => m.trend !== 'flat'
+    );
+    return realLevel ? realLevel[0] : LEVELS[0];
+  }, [metrics]);
+
+  // Internal state for uncontrolled mode (when parent doesn't manage selection)
+  const [internalLevel, setInternalLevel] = React.useState<string>(detectedLevel);
+
+  // Update internal state when detected level changes (new API data)
+  React.useEffect(() => {
+    if (!selectedLevel) {
+      setInternalLevel(detectedLevel);
+    }
+  }, [detectedLevel, selectedLevel]);
+
+  const activeLevel = selectedLevel || internalLevel;
+  const handleLevelChange = (level: string) => {
+    if (onLevelChange) {
+      onLevelChange(level);
+    } else {
+      setInternalLevel(level);
+    }
+  };
 
   if (!metrics || !metrics.by_level) {
     return (
@@ -78,7 +105,7 @@ export const DoraCard: React.FC<DoraCardProps> = ({ metrics, selectedLevel, onLe
         <div className="flex items-center gap-2">
           <BarChart3 className="w-4 h-4 text-aws-orange" aria-hidden="true" />
           <h2 className="text-sm font-bold text-secondary-dynamic uppercase tracking-widest">
-            DORA 4 Metrics
+            DORA Metrics
           </h2>
         </div>
       </div>
@@ -88,7 +115,7 @@ export const DoraCard: React.FC<DoraCardProps> = ({ metrics, selectedLevel, onLe
         {LEVELS.filter((l) => metrics.by_level[l]).map((level) => (
           <button
             key={level}
-            onClick={() => onLevelChange?.(level)}
+            onClick={() => handleLevelChange(level)}
             className={`flex-1 px-2 py-1 rounded text-[9px] font-mono font-bold uppercase transition-all ${
               activeLevel === level
                 ? 'bg-aws-orange text-white'

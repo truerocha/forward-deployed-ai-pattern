@@ -123,6 +123,22 @@ for REPO in "$ECR_REPO_STRANDS" "$ECR_REPO_ONBOARDING"; do
   fi
 done
 
+# Check ADOT sidecar image (required by task definition, COE: 5-Whys image dependency gap)
+ADOT_TAG="adot-v0.40.0"
+ADOT_CHECK=$(aws ecr describe-images \
+  --repository-name "$ECR_REPO_STRANDS" \
+  --image-ids imageTag="$ADOT_TAG" \
+  --region "$REGION" \
+  --query 'imageDetails[0].imagePushedAt' \
+  --output text 2>/dev/null) || ADOT_CHECK="NOT_FOUND"
+
+if [[ "$ADOT_CHECK" == "NOT_FOUND" || "$ADOT_CHECK" == "None" ]]; then
+  check_fail "ADOT sidecar image '$ECR_REPO_STRANDS:$ADOT_TAG' missing" \
+    "make docker-build-adot (task definition requires this image)"
+else
+  check_pass "ADOT sidecar '$ADOT_TAG' exists (pushed: $ADOT_CHECK)"
+fi
+
 # ─── Check 3: EventBridge Rules ─────────────────────────────────
 section "EventBridge Rules"
 

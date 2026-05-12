@@ -85,7 +85,20 @@ resource "aws_ecr_lifecycle_policy" "strands_agent" {
     rules = [
       {
         rulePriority = 1
-        description  = "Keep last 10 images"
+        description  = "Preserve ADOT sidecar images (never expire)"
+        selection = {
+          tagStatus     = "tagged"
+          tagPrefixList = ["adot-"]
+          countType     = "imageCountMoreThan"
+          countNumber   = 50
+        }
+        action = {
+          type = "expire"
+        }
+      },
+      {
+        rulePriority = 2
+        description  = "Keep last 10 non-ADOT images"
         selection = {
           tagStatus   = "any"
           countType   = "imageCountMoreThan"

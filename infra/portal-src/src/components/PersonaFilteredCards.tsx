@@ -66,18 +66,22 @@ export const PersonaFilteredCards: React.FC<PersonaFilteredCardsProps> = ({
     GateHistoryCard: <GateHistoryCard history={mapGateHistory(factoryData)} />,
     DataQualityCard: <DataQualityCard />,
     SquadExecutionCard: <SquadExecutionCard agents={mapSquadExecution(factoryData)} />,
-    LiveTimeline: <LiveTimeline events={mapLiveTimeline(factoryData)} />,
+    LiveTimeline: <LiveTimeline events={mapLiveTimeline(factoryData)} wsConnected={!!factoryData} />,
     HumanInputCard: <HumanInputCard onRespond={() => {}} />,
     BranchEvaluationCard: <BranchEvaluationCard />,
     ConductorPlanCard: <ConductorPlanCard />,
   };
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 pb-4">
+    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 pb-4 h-full overflow-y-auto">
       {visibleCards.map((cardName) => {
         const card = cardRegistry[cardName];
         if (!card) return null;
-        return <React.Fragment key={cardName}>{card}</React.Fragment>;
+        return (
+          <div key={cardName} className="min-h-[220px]">
+            {card}
+          </div>
+        );
       })}
     </div>
   );

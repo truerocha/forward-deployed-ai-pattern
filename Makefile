@@ -86,6 +86,12 @@ docker-push-all: docker-build docker-build-adot
 	@echo "✅ All agent images pushed to ECR (linux/amd64)"
 
 docker-deploy: docker-push-all
+	@echo "Verifying all task definition images exist in ECR..."
+	@aws ecr describe-images --repository-name $(shell basename $(ECR_URL)) --image-ids imageTag=latest --region $(AWS_REGION) >/dev/null 2>&1 || \
+		(echo "❌ strands-agent:latest not found in ECR"; exit 1)
+	@aws ecr describe-images --repository-name $(shell basename $(ECR_URL)) --image-ids imageTag=adot-v0.40.0 --region $(AWS_REGION) >/dev/null 2>&1 || \
+		(echo "❌ adot-v0.40.0 not found in ECR — run: make docker-build-adot"; exit 1)
+	@echo "✅ All images verified in ECR"
 	@echo "Forcing new ECS task definition registration..."
 	@terraform -chdir=infra/terraform apply -target=aws_ecs_task_definition.strands_agent -auto-approve
 	@echo "✅ ECS task definition updated — new tasks will use the fresh image"
