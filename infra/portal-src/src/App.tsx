@@ -23,6 +23,7 @@ import { RegistriesCard } from './components/RegistriesCard';
 import { BranchEvaluationCard } from './components/BranchEvaluationCard';
 import { Agent, LogEntry, AppView } from './types';
 import { PersonaRouter } from './components/PersonaRouter';
+import { PersonaFilteredCards } from './components/PersonaFilteredCards';
 import { DoraCard } from './components/DoraCard';
 import { CostCard } from './components/CostCard';
 import { ValueStreamCard } from './components/ValueStreamCard';
@@ -54,6 +55,7 @@ export default function App() {
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [apiStatus, setApiStatus] = useState<any>(null);
   const [factoryData, setFactoryData] = useState<any>(null);
+  const [activePersona, setActivePersona] = useState<string>('SWE');
   
   const isTabActive = useRef(true);
 
@@ -449,22 +451,11 @@ export default function App() {
 
           {activeView === 'observability' && (
             <div className="flex-1 flex flex-col overflow-hidden overflow-y-auto">
-              <PersonaRouter>
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 pb-4">
-                  <DoraCard metrics={mapDoraMetrics(factoryData)} />
-                  <CostCard summary={mapCostMetrics(factoryData)} />
-                  <ValueStreamCard />
-                  <MaturityRadar />
-                  <BrainSimCard />
-                  <TrustCard />
-                  <NetFrictionCard />
-                  <GateFeedbackCard />
-                  <GateHistoryCard history={mapGateHistory(factoryData)} />
-                  <DataQualityCard />
-                  <SquadExecutionCard agents={mapSquadExecution(factoryData)} />
-                  <LiveTimeline events={mapLiveTimeline(factoryData)} />
-                  <HumanInputCard onRespond={() => {}} />
-                </div>
+              <PersonaRouter onPersonaChange={(p) => setActivePersona(p)}>
+                <PersonaFilteredCards
+                  persona={activePersona}
+                  factoryData={factoryData}
+                />
               </PersonaRouter>
             </div>
           )}
