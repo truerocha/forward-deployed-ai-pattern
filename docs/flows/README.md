@@ -22,3 +22,7 @@ Each Mermaid diagram represents the usability flow of a specific factory feature
 13. [Cloud Orchestration Flow](13-cloud-orchestration.md)
 14. [Repo Onboarding Flow (Phase 0)](14-repo-onboarding.md)
 15. [Branch Evaluation Gate](15-branch-evaluation.md)
+16. [Risk Inference Engine](16-risk-inference.md)
+17. [DORA Forecast Engine](17-dora-forecast.md)
+18. [Code Knowledge Base Query](18-code-kb-query.md)
+19. [Persona-Based Portal UX](19-persona-portal.md)
