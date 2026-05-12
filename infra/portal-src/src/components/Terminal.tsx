@@ -11,7 +11,7 @@ export const Terminal = ({ logs }: { logs: LogEntry[] }) => {
 
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      scrollRef.current.scrollTop = 0;
     }
   }, [logs]);
 

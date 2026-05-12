@@ -448,48 +448,76 @@ export interface AgentExecution {
 }
 
 /**
- * Maps factoryData.agents → SquadExecutionCard props.
+ * Maps factoryData → SquadExecutionCard props.
  *
- * Transforms the raw agent lifecycle data into the AgentExecution[] format
- * the card expects, inferring model tier and stage from agent metadata.
+ * Derives real agent names from task events' `phase` field rather than
+ * the lifecycle table (which only has generic 'fde-pipeline' entries).
+ * The phase field contains the actual agent role (e.g., 'swe-developer-agent',
+ * 'swe-adversarial-agent', 'swe-dtl-commiter-agent').
  */
 export function mapSquadExecution(data: DashboardData | null): AgentExecution[] {
-  if (!data) return [];
+  if (!data?.tasks) return [];
 
-  const { agents, tasks } = data;
+  const { tasks } = data;
 
-  // If we have agents from the lifecycle table, use them directly
+  // Extract real agent names from task events' phase field
+  const agentMap = new Map<string, { status: AgentExecution['status']; stage: string; lastTs: string; taskStatus: string }>();
+
+  // Process active/recent tasks to find which agents have been active
+  const recentTasks = [...tasks]
+    .filter((t) => t.events?.length > 0)
+    .sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''))
+    .slice(0, 3);
+
+  for (const task of recentTasks) {
+    if (!task.events) continue;
+
+    for (const event of task.events) {
+      const phase = event.phase;
+      if (!phase || phase === 'intake' || phase === 'workspace' || phase === 'review' || phase === 'completion') continue;
+
+      const existing = agentMap.get(phase);
+      const eventTs = event.ts || '';
+
+      // Track the latest event per agent phase
+      if (!existing || eventTs > existing.lastTs) {
+        agentMap.set(phase, {
+          status: task.status === 'running' || task.status === 'IN_PROGRESS' ? 'running' : 'complete',
+          stage: task.current_stage || phase,
+          lastTs: eventTs,
+          taskStatus: task.status,
+        });
+      }
+    }
+  }
+
+  // Convert to AgentExecution array
+  if (agentMap.size > 0) {
+    return Array.from(agentMap.entries()).map(([agentName, info]) => ({
+      role: agentName,
+      status: info.status,
+      model_tier: inferModelTier(agentName),
+      stage: info.stage,
+      duration_seconds: 0, // Not available from events alone
+    }));
+  }
+
+  // Fallback: if no events with phases, use lifecycle table
+  const { agents } = data;
   if (agents && agents.length > 0) {
     return agents.map((agent: any) => {
-      const status = mapAgentStatus(agent.status);
-      const durationMs = agent.execution_time_ms || 0;
-
-      // Infer model tier from agent name (convention: name includes tier hint)
-      const modelTier = inferModelTier(agent.name || '');
-
-      // Find the task this agent is working on to get the current stage
       const assignedTask = tasks?.find((t) => t.agent?.instance_id === agent.instance_id);
-      const stage = assignedTask?.current_stage || 'idle';
-
       return {
-        role: agent.name || agent.instance_id || 'agent',
-        status,
-        model_tier: modelTier,
-        stage,
-        duration_seconds: Math.round(durationMs / 1000),
+        role: assignedTask?.current_stage || agent.name || agent.instance_id || 'agent',
+        status: mapAgentStatus(agent.status),
+        model_tier: inferModelTier(agent.name || ''),
+        stage: assignedTask?.current_stage || 'idle',
+        duration_seconds: Math.round((agent.execution_time_ms || 0) / 1000),
       };
     });
   }
 
-  // Fallback: derive squad from tasks with assigned agents
-  const agentTasks = tasks?.filter((t) => t.agent) || [];
-  return agentTasks.slice(0, 8).map((task) => ({
-    role: task.agent?.name || 'fde-pipeline',
-    status: mapAgentStatus(task.status === 'running' ? 'RUNNING' : task.status === 'completed' ? 'COMPLETED' : 'CREATED'),
-    model_tier: inferModelTier(task.agent?.name || ''),
-    stage: task.current_stage || 'unknown',
-    duration_seconds: Math.round((task.elapsed_ms || task.duration_ms || 0) / 1000),
-  }));
+  return [];
 }
 
 function mapAgentStatus(rawStatus: string): AgentExecution['status'] {
