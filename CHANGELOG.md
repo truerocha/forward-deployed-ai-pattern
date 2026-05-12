@@ -61,6 +61,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ### Fixed — Cryptic 'NO PR' Badge
 - `infra/portal-src/src/App.tsx` — Replaced raw "NO PR" badge with meaningful delivery status that distinguishes between "not yet pushed", "push failed", and "delivered".
 
+### Added — Shell Command Context Parsing
+- `infra/docker/agents/stream_callback.py` — `_handle_tool_input()` captures `contentBlockDelta` tool input and classifies shell commands into human-readable actions (git commit → "Committing changes...", pytest → "Running tests...", cat file.py → "Reading: file.py").
+
+### Changed — Agent Role Labels in Timeline
+- `infra/docker/agents/stream_callback.py` — Added `agent_role` field to DashboardCallback. Events now carry `phase=agent_role` so the portal shows the correct agent name instead of generic "fde-pipeline".
+- `infra/docker/agents/orchestrator.py` — Passes `agent_role` when creating DashboardCallback instances.
+
+### Changed — Portal Polling Interval
+- `infra/portal-src/src/App.tsx` — Reduced polling from 15s to 5s to match stream_callback flush interval. Portal updates within ~5-10s without manual refresh.
+
+### Fixed — DORA Lead Time Accuracy (COE-023)
+- `infra/docker/agents/task_queue.py` — `update_task_stage()` sets `started_at = if_not_exists(started_at, :now)` idempotently. `complete_task()` calculates `duration_ms = now - started_at`.
+- `infra/terraform/lambda/dashboard_status/index.py` — `_compute_elapsed()` uses `started_at` instead of `created_at`.
+
+### Fixed — Push Force Fallback for Re-Worked Tasks
+- `infra/docker/agents/workspace_setup.py` — Fallback from `--force-with-lease` to `--force` when the remote branch has divergent history from a previous pipeline run.
+
 ### Security
 - Removed all hardcoded AWS account IDs, profile names, and email addresses from source-controlled files.
 - Added `docs/example/` and `cloud-inventory.md` to `.gitignore` to prevent accidental PII commits.

@@ -6,6 +6,23 @@
 
 ---
 
+## COE-023: DORA Lead Time Discrepancy (started_at Race Condition)
+
+- **Date**: 2026-05-11
+- **Severity**: Metrics (P3)
+- **Found in**: TASK-6693629d showed 1.1h lead time in DORA card but actual execution was ~25 min
+- **Root cause**: `claim_task()` sets `started_at` via ConditionExpression (`status = READY`). On re-triggered tasks, the condition fails silently (status already IN_PROGRESS from a previous claim), so `started_at` is never set. The dashboard Lambda falls back to `created_at` (webhook arrival time), inflating the metric.
+- **Fixes applied**:
+  - `update_task_stage()` now sets `started_at = if_not_exists(started_at, :now)` on every stage update. This is idempotent (first-write-wins), unconditional (no ConditionExpression), and universal (works for both monolith and distributed containers).
+  - `complete_task()` calculates `duration_ms = now - started_at` (actual execution time).
+  - `_compute_elapsed()` in dashboard Lambda uses `started_at` (falls back to `created_at` only if not set).
+- **Files modified**:
+  - `infra/docker/agents/task_queue.py` — `update_task_stage`, `claim_task`, `complete_task`
+  - `infra/terraform/lambda/dashboard_status/index.py` — `_compute_elapsed`
+- **Prevention**: `if_not_exists` pattern ensures `started_at` is always set regardless of task lifecycle path. No race condition possible.
+
+---
+
 ## COE-022: Portal Timeline Showing Raw Tool Calls
 
 - **Date**: 2026-05-11

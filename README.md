@@ -5,9 +5,11 @@
 > From reactive code writer to autonomous engineering partner.
 > The Staff Engineer writes specs. The factory ships code.
 
-[![Tests](https://img.shields.io/badge/tests-171%20collected-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-184%20collected-brightgreen)]()
 [![Hooks](https://img.shields.io/badge/hooks-18%20(4%20V2%20%2B%2014%20V3)-blue)]()
 [![Autonomy Level](https://img.shields.io/badge/level-L4%20Autonomous%20Factory-purple)]()
+[![ADRs](https://img.shields.io/badge/ADRs-21-blue)]()
+[![Execution](https://img.shields.io/badge/execution-distributed%20ready-purple)]()
 
 ---
 
@@ -65,6 +67,17 @@ The factory is organized into **5 modular planes**, each with its own diagram an
 The complete AWS reference architecture shows all cloud services, data flows, and integration points in a single view. It covers: API Gateway (webhook ingestion), EventBridge (event routing), ECS Fargate (headless agent execution), Amazon Bedrock (LLM inference), DynamoDB (state management), S3 (artifact storage), Lambda (DAG fan-out + dead-letter), CloudWatch/SNS/SQS (observability), CloudFront (dashboard CDN), and Secrets Manager (credential isolation).
 
 **Cloud orchestration (optional):** When deployed to AWS, ALM webhooks flow through API Gateway → EventBridge → ECS Fargate, where a Strands agent container runs the FDE protocol headless using Bedrock for inference. Results are written to S3 and ALM status is updated automatically. See [Cloud Orchestration Flow](docs/flows/13-cloud-orchestration.md).
+
+### Distributed Execution (New)
+
+![Distributed Execution](docs/architecture/distributed-execution.png)
+
+The factory now supports **distributed execution** where each agent runs as an independent ECS task with its own resources, logs, and retry policy. The **Conductor** (ADR-020) generates dynamic workflow plans based on task complexity, and a **two-way door** (ADR-021) allows instant rollback between monolith and distributed modes.
+
+| Mode | Description | Rollback |
+|------|-------------|----------|
+| Monolith | All agents in one container (current default) | N/A |
+| Distributed | Each agent = own ECS task, parallel stages | `terraform apply` (<30s) |
 
 Each workspace is a **production line** for a specific codebase. The Staff Engineer manages multiple lines simultaneously, routing work and approving outcomes.
 
@@ -159,7 +172,7 @@ forward-deployed-engineer-pattern/
 |   +-- settings/                   # MCP config template
 +-- docs/
 |   +-- architecture/               # System diagram + design document (DDR)
-|   +-- adr/                        # 18 Architecture Decision Records
+|   +-- adr/                        # 21 Architecture Decision Records
 |   +-- flows/                      # 15 Mermaid feature flow diagrams
 |   +-- blueprint/                  # V3 blueprint + artifacts + deploy guide
 |   +-- design/                     # V2 design document (research foundations)
@@ -168,40 +181,14 @@ forward-deployed-engineer-pattern/
 +-- examples/
 |   +-- web-app/                    # Example: FDE for a web application
 |   +-- data-pipeline/              # Example: FDE for a data pipeline
-+-- scripts/
-|   +-- pre-flight-fde.sh          # Step 1: Validate machine + collect config
-|   +-- validate-deploy-fde.sh     # Step 2: Validate control/data/FDE planes
-|   +-- code-factory-setup.sh      # Step 3: Deploy factory (greenfield + brownfield)
-|   +-- provision-workspace.sh     # Legacy: manual onboarding (--global | --project)
-|   +-- validate-alm-api.sh        # ALM API connectivity checks
-|   +-- validate-aws-iam.py        # AWS IAM permission validator
-|   +-- validate-e2e-cloud.sh     # E2E cloud infrastructure validation
-|   +-- teardown-fde.sh           # Decommission AWS resources (Terraform or tag-based)
-|   +-- generate_architecture_diagram.py
-|   +-- generate_reference_architecture.py
-|   +-- generate_plane_diagrams.py
-|   +-- lint_language.py
-|   +-- evaluate_branch.py         # Branch evaluation CLI (exit 0/1 based on score)
++-- scripts/                        # Setup, validation, and deployment scripts
 +-- infra/
 |   +-- terraform/                  # AWS IaC (ECR, ECS, Bedrock, S3, Secrets, VPC)
 |   +-- docker/                     # Strands agent container (Dockerfile + entrypoint)
-|   |   +-- agents/                 # Agent application layer (registry, router, orchestrator, tools, prompts)
-|   |   +-- agents/branch_evaluation/ # Branch Evaluation Agent (9 modules: classifier, evaluators, scoring, reports, merge, pipeline graph)
+|   |   +-- agents/                 # Agent application layer
 +-- tests/
-    +-- test_fde_e2e_protocol.py    # Structural E2E test (48 tests)
-    +-- test_fde_quality_threshold.py # Quality comparison test (6 tests)
-    +-- test_pipeline_data_travel.py # Cross-module contract tests (7 tests)
-    +-- test_orchestrator_e2e.py    # Full pipeline wiring (3 tests)
-    +-- test_execution_plans.py    # Resumable milestone tracking (15 tests)
-    +-- test_doc_gardening.py      # Documentation drift detection (12 tests)
-    +-- test_golden_principles.py  # Code quality invariants (13 tests)
-    +-- test_lint_remediation.py   # Custom linters (12 tests)
-    +-- test_pr_llm_review.py      # Agent-to-agent PR review (12 tests)
-    +-- test_observability_tools.py # Factory metrics tools (7 tests)
-    +-- test_autonomy_level.py     # L1-L5 autonomy computation (5 tests)
-    +-- test_failure_mode_taxonomy.py # Failure classification
-    +-- test_domain_segmented_metrics.py # DORA + factory metrics
-    +-- test_scope_boundaries.py   # Out-of-scope rejection
+
+See `docs/architecture/design-document.md` for full component inventory.
 ```
 
 ## Research Foundations
