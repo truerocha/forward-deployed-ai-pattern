@@ -132,13 +132,13 @@ def append_task_event(task_id: str, event_type: str, message: str, **metadata) -
     Args:
         task_id: The task to append the event to.
         event_type: Event category (e.g., 'agent', 'system', 'tool', 'gate', 'error').
-        message: Human-readable event description (max 200 chars).
+        message: Human-readable event description (max 500 chars).
         **metadata: Optional structured fields for richer rendering:
             - phase: FDE phase (e.g., 'reconnaissance', 'intake', 'engineering')
             - gate_name: Gate identifier (e.g., 'dor', 'adversarial', 'dod', 'concurrency')
             - gate_result: 'pass' or 'fail'
-            - criteria: What was evaluated (max 150 chars)
-            - context: Accumulated context or rationale (max 300 chars)
+            - criteria: What was evaluated (max 300 chars)
+            - context: Accumulated context or rationale (max 500 chars)
             - autonomy_level: Computed autonomy level (e.g., 'L3', 'L5')
             - confidence: Confidence level (e.g., 'high', 'medium', 'low')
     """
@@ -146,7 +146,7 @@ def append_task_event(task_id: str, event_type: str, message: str, **metadata) -
     event_entry = {
         "ts": _now(),
         "type": event_type,
-        "msg": message[:200],
+        "msg": message[:500],
     }
 
     # Add optional structured metadata (only non-empty values)
@@ -155,7 +155,7 @@ def append_task_event(task_id: str, event_type: str, message: str, **metadata) -
     for field in allowed_fields:
         value = metadata.get(field)
         if value:
-            max_len = 300 if field == "context" else 150
+            max_len = 500 if field == "context" else 300
             event_entry[field] = str(value)[:max_len]
 
     try:

@@ -135,7 +135,7 @@ export const PersonaRouter: React.FC<PersonaRouterProps> = ({
       </div>
 
       {/* Routed content */}
-      <div className="flex-1 min-h-0">
+      <div className="flex-1 min-h-0 relative">
         {children}
       </div>
     </div>

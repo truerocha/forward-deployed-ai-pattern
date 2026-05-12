@@ -148,8 +148,8 @@ export default function App() {
             }
           }
 
-          // Sort ALL events by timestamp (chronological order)
-          apiLogs.sort((a: any, b: any) => (a._sortKey || '').localeCompare(b._sortKey || ''));
+          // Sort ALL events by timestamp (newest first — fresh info at top)
+          apiLogs.sort((a: any, b: any) => (b._sortKey || '').localeCompare(a._sortKey || ''));
           setLogs(apiLogs);
         }
       }
@@ -450,7 +450,7 @@ export default function App() {
           )}
 
           {activeView === 'observability' && (
-            <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
               <PersonaRouter onPersonaChange={(p) => setActivePersona(p)}>
                 <PersonaFilteredCards
                   persona={activePersona}

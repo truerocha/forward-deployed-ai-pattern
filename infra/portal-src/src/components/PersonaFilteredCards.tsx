@@ -73,12 +73,12 @@ export const PersonaFilteredCards: React.FC<PersonaFilteredCardsProps> = ({
   };
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 pb-4 flex-1 min-h-0 overflow-y-auto auto-rows-[minmax(200px,1fr)]">
+    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 pb-4 absolute inset-0 overflow-y-auto">
       {visibleCards.map((cardName) => {
         const card = cardRegistry[cardName];
         if (!card) return null;
         return (
-          <div key={cardName} className="overflow-hidden">
+          <div key={cardName} className="h-[280px]">
             {card}
           </div>
         );

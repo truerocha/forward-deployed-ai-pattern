@@ -387,7 +387,7 @@ function formatEventMessage(event: TaskEvent, taskId: string): string {
   if (event.type === 'reasoning') {
     let formatted = `${prefix} ${msg}`;
     if (event.criteria) {
-      formatted += ` \u2014 ${event.criteria.slice(0, 120)}`;
+      formatted += ` \u2014 ${event.criteria}`;
     }
     return formatted;
   }
@@ -410,26 +410,11 @@ function formatEventMessage(event: TaskEvent, taskId: string): string {
 
   // Error events — show error type
   if (event.type === 'error') {
-    return `${prefix} \u2717 Error: ${msg.slice(0, 80)}`;
+    return `${prefix} \u2717 Error: ${msg}`;
   }
 
-  // Agent lifecycle events
-  if (msg.includes('Agent') || msg.includes('agent')) {
-    return `${prefix} ${msg.slice(0, 100)}`;
-  }
-
-  // Conductor events
-  if (msg.includes('Conductor') || msg.includes('topology') || msg.includes('plan')) {
-    return `${prefix} \uD83C\uDFBC ${msg.slice(0, 100)}`;
-  }
-
-  // Implementation milestones
-  if (msg.includes('PR') || msg.includes('commit') || msg.includes('push')) {
-    return `${prefix} \uD83D\uDCE6 ${msg.slice(0, 100)}`;
-  }
-
-  // Default: show first 100 chars of message
-  return `${prefix} ${msg.slice(0, 100)}`;
+  // Default: show full message (CSS handles overflow via text wrapping)
+  return `${prefix} ${msg}`;
 }
 
 function mapEventType(event: TaskEvent): TimelineEvent['type'] {
