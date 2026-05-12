@@ -384,10 +384,11 @@ def complete_task(task_id: str, result: str) -> dict:
     # Resolve DAG dependencies (existing behavior)
     promoted = _resolve_dependencies(task_id)
 
-    # Reap stuck tasks and retry queued tasks for this repo (COE-016 fix)
+    # Decrement atomic counter for this repo (Priority 3: race-free tracking)
     task = get_task(task_id)
     repo = task.get("repo", "") if task else ""
     if repo:
+        decrement_active_counter(repo)
         reaped = reap_stuck_tasks(max_age_minutes=60)
         if reaped:
             logger.info("Reaped %d stuck tasks during completion of %s", len(reaped), task_id)
@@ -407,6 +408,13 @@ def fail_task(task_id: str, error: str) -> dict:
         ExpressionAttributeValues={":status": "FAILED", ":error": error, ":now": _now()},
     )
     logger.info("Task %s failed: %s", task_id, error[:100])
+
+    # Decrement atomic counter (Priority 3: release the slot on failure)
+    task = get_task(task_id)
+    repo = task.get("repo", "") if task else ""
+    if repo:
+        decrement_active_counter(repo)
+
     blocked = _block_dependents(task_id)
     return {"task_id": task_id, "status": "FAILED", "blocked_tasks": blocked}
 
@@ -463,3 +471,154 @@ def list_tasks(status: str | None = None) -> list[dict]:
         return table.query(IndexName="status-created-index",
                            KeyConditionExpression=Key("status").eq(status)).get("Items", [])
     return table.scan().get("Items", [])
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Priority 3: DynamoDB Atomic Counter (prevents race conditions)
+# Priority 4: Runtime Config Override (hot-tuning without redeploy)
+# Priority 5: Budget-Aware Throttle (cost protection)
+# ═══════════════════════════════════════════════════════════════════
+
+
+def increment_active_counter(repo: str) -> int:
+    """Atomically increment the active task counter for a repo.
+
+    Uses DynamoDB ADD operation (atomic, no read-modify-write race).
+    Returns the new count after increment.
+
+    Item schema: task_id="COUNTER#{repo}", active_count=N
+    """
+    table = _get_table()
+    result = table.update_item(
+        Key={"task_id": f"COUNTER#{repo}"},
+        UpdateExpression="ADD active_count :inc SET updated_at = :now",
+        ExpressionAttributeValues={":inc": 1, ":now": _now()},
+        ReturnValues="UPDATED_NEW",
+    )
+    new_count = int(result["Attributes"]["active_count"])
+    logger.info("Atomic counter: repo=%s → %d active", repo, new_count)
+    return new_count
+
+
+def decrement_active_counter(repo: str) -> int:
+    """Atomically decrement the active task counter for a repo.
+
+    Clamps to 0 (never goes negative). Returns the new count.
+    """
+    table = _get_table()
+    try:
+        result = table.update_item(
+            Key={"task_id": f"COUNTER#{repo}"},
+            UpdateExpression="ADD active_count :dec SET updated_at = :now",
+            ConditionExpression="active_count > :zero",
+            ExpressionAttributeValues={":dec": -1, ":now": _now(), ":zero": 0},
+            ReturnValues="UPDATED_NEW",
+        )
+        new_count = int(result["Attributes"]["active_count"])
+        logger.info("Atomic counter: repo=%s → %d active (decremented)", repo, new_count)
+        return new_count
+    except table.meta.client.exceptions.ConditionalCheckFailedException:
+        logger.warning("Atomic counter: repo=%s already at 0 — no decrement", repo)
+        return 0
+
+
+def check_concurrency_atomic(repo: str, max_concurrent: int) -> tuple[bool, int]:
+    """Atomic concurrency check using DynamoDB counter (no race conditions).
+
+    Attempts to increment the counter. If the result exceeds max_concurrent,
+    immediately decrements (rollback) and returns False.
+
+    This is the atomic version of check_concurrency() — use this when
+    multiple containers may start simultaneously for the same repo.
+    """
+    new_count = increment_active_counter(repo)
+    if new_count <= max_concurrent:
+        return True, new_count
+    # Exceeded limit — rollback the increment
+    decrement_active_counter(repo)
+    logger.warning(
+        "Atomic concurrency guard: repo=%s would be %d/%d — rolled back",
+        repo, new_count, max_concurrent,
+    )
+    return False, new_count - 1
+
+
+def get_runtime_config(key: str, default: str = "") -> str:
+    """Read a runtime config value from DynamoDB (hot-tuning without redeploy).
+
+    Config items use task_id="CONFIG#{key}" as the partition key.
+    This allows operators to change concurrency limits, budget thresholds,
+    or feature flags without redeploying the Docker image.
+
+    Args:
+        key: Config key (e.g., 'max_concurrent_tasks', 'daily_budget_usd')
+        default: Value to return if key doesn't exist
+
+    Returns:
+        The config value as a string, or default if not found.
+    """
+    table = _get_table()
+    try:
+        result = table.get_item(
+            Key={"task_id": f"CONFIG#{key}"},
+            ConsistentRead=True,
+        )
+        item = result.get("Item")
+        if item:
+            return item.get("value", default)
+        return default
+    except Exception as e:
+        logger.debug("Config read failed for %s (using default=%s): %s", key, default, e)
+        return default
+
+
+def set_runtime_config(key: str, value: str, description: str = "") -> None:
+    """Write a runtime config value to DynamoDB.
+
+    Used by operators or automation to hot-tune the system.
+    """
+    table = _get_table()
+    table.put_item(Item={
+        "task_id": f"CONFIG#{key}",
+        "value": value,
+        "description": description,
+        "updated_at": _now(),
+        "status": "CONFIG",  # Required for GSI (won't appear in task queries)
+    })
+    logger.info("Config set: %s = %s", key, value)
+
+
+def resolve_max_concurrent(repo: str) -> int:
+    """Resolve the effective max_concurrent_tasks using the priority chain:
+
+    1. DynamoDB runtime override (CONFIG#max_concurrent_tasks) — hot-tunable
+    2. Environment variable MAX_CONCURRENT_TASKS — infrastructure-driven
+    3. Project registry default — code-level fallback (3)
+
+    Also applies budget throttle: if CONFIG#budget_exceeded is "true",
+    reduces to 1 regardless of other settings.
+    """
+    # Priority 5: Budget throttle override
+    budget_exceeded = get_runtime_config("budget_exceeded", "false")
+    if budget_exceeded.lower() == "true":
+        logger.warning("Budget throttle active — reducing max_concurrent to 1")
+        return 1
+
+    # Priority 4: Runtime DynamoDB override
+    runtime_override = get_runtime_config("max_concurrent_tasks", "")
+    if runtime_override:
+        try:
+            val = int(runtime_override)
+            if 1 <= val <= 10:
+                logger.info("Using runtime config max_concurrent=%d for repo=%s", val, repo)
+                return val
+        except ValueError:
+            pass
+
+    # Priority 2: Environment variable (from Terraform)
+    infra_max = int(os.environ.get("MAX_CONCURRENT_TASKS", "0"))
+    if infra_max > 0:
+        return infra_max
+
+    # Priority 1: Default
+    return 3

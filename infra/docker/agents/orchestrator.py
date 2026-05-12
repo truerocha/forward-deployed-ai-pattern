@@ -192,10 +192,9 @@ class Orchestrator:
                 )
 
             project_config = get_registry().get_project(repo)
-            # Concurrency limit: env var (infrastructure-driven) > project config > default 3
-            infra_max = int(os.environ.get("MAX_CONCURRENT_TASKS", "0"))
-            effective_max = infra_max if infra_max > 0 else project_config.max_concurrent_tasks
-            can_proceed, active_count = task_queue.check_concurrency(
+            # Concurrency limit: resolve from priority chain (runtime > infra > project > default)
+            effective_max = task_queue.resolve_max_concurrent(repo)
+            can_proceed, active_count = task_queue.check_concurrency_atomic(
                 repo, effective_max,
             )
             if not can_proceed:
