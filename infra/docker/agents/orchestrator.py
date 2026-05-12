@@ -147,6 +147,20 @@ class Orchestrator:
         if issue_id:
             existing_task = task_queue.find_task_by_issue(issue_id)
             if existing_task:
+                existing_status = existing_task.get("status", "")
+                # If task is already IN_PROGRESS, another container is executing it.
+                # Exit gracefully to prevent duplicate execution (idempotency guard).
+                if existing_status == "IN_PROGRESS":
+                    logger.info(
+                        "Task %s for issue %s is already IN_PROGRESS — "
+                        "exiting to prevent duplicate execution (idempotency guard)",
+                        existing_task["task_id"], issue_id,
+                    )
+                    return {
+                        "status": "duplicate_skipped",
+                        "task_id": existing_task["task_id"],
+                        "reason": "Task already in progress by another container",
+                    }
                 task_id = existing_task["task_id"]
                 task_queue.claim_task(task_id, "fde-orchestrator")
                 logger.info("Claimed existing task %s (issue: %s)", task_id, issue_id)

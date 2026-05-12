@@ -267,6 +267,10 @@ def _find_existing_task(table, issue_id: str) -> dict | None:
 
     Scans READY and IN_PROGRESS tasks. If found, returns the existing record
     to prevent duplicate entries from webhook retries or duplicate events.
+
+    Stale task TTL: If a task has been in a non-terminal state for >30 minutes
+    without an updated_at change, it's considered stale and won't block new tasks.
+    This prevents permanently stuck tasks from blocking retries (COE: 5-Whys).
     """
     if not issue_id:
         return None
@@ -282,10 +286,34 @@ def _find_existing_task(table, issue_id: str) -> dict | None:
                 ":s2": "IN_PROGRESS",
                 ":s3": "RUNNING",
             },
-            Limit=1,
+            Limit=5,
         )
         items = response.get("Items", [])
-        return items[0] if items else None
+        if not items:
+            return None
+
+        # Check staleness: if task hasn't been updated in 30+ minutes, allow override
+        now = datetime.now(timezone.utc)
+        stale_threshold_minutes = 30
+
+        for item in items:
+            updated_at_str = item.get("updated_at", item.get("created_at", ""))
+            if updated_at_str:
+                try:
+                    updated_at = datetime.fromisoformat(updated_at_str.replace("Z", "+00:00"))
+                    age_minutes = (now - updated_at).total_seconds() / 60
+                    if age_minutes > stale_threshold_minutes:
+                        logger.info(
+                            "Task %s for issue %s is stale (%.0f min without update) — allowing new task",
+                            item.get("task_id"), issue_id, age_minutes,
+                        )
+                        continue  # Skip stale task, check next
+                except (ValueError, TypeError):
+                    pass
+            # Non-stale active task found — block duplicate
+            return item
+
+        return None
     except Exception as e:
         logger.warning("Deduplication check failed (proceeding with insert): %s", e)
         return None
