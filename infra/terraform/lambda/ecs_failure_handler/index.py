@@ -67,6 +67,24 @@ def _handle_ecs_state_change(event):
     if last_status != "STOPPED":
         return {"statusCode": 200, "body": "not stopped"}
 
+    # Check container exit codes — exit 0 is a successful completion, not a failure.
+    # ECS reports "EssentialContainerExited" for ALL container exits (success or failure).
+    # For batch/task workloads, exit 0 is the expected success signal.
+    containers = detail.get("containers", [])
+    exit_codes = [c.get("exitCode") for c in containers if c.get("exitCode") is not None]
+    essential_exit_code = next(
+        (c.get("exitCode") for c in containers if c.get("name") in ("strands-agent", "orchestrator")),
+        None,
+    )
+
+    # Exit code 0 on the main container = successful task completion (not a failure)
+    if essential_exit_code == 0:
+        logger.info(
+            "ECS task completed successfully (exit code 0): stopCode=%s taskDef=%s",
+            stop_code, task_def_arn,
+        )
+        return {"statusCode": 200, "body": "successful_completion"}
+
     if not stopped_reason and stop_code != "TaskFailedToStart":
         return {"statusCode": 200, "body": "normal stop"}
 
