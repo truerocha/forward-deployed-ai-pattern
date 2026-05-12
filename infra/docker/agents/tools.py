@@ -358,6 +358,128 @@ def create_gitlab_merge_request(
 
 
 @tool
+def query_code_kb(query: str, search_type: str = "semantic") -> str:
+    """Search the Code Knowledge Base for modules, functions, or concepts.
+
+    Resolves the linguistic impedance mismatch between business language
+    and code symbols. Agents should call this BEFORE reading files to
+    understand which modules are relevant to their task.
+
+    Search types:
+      - "semantic": Natural language search over module descriptions (default)
+      - "function": Find a specific function by name across all modules
+      - "callers": Find all modules that call a given function
+      - "callees": Find all functions called by a given function
+      - "module": Get complete knowledge about a specific module path
+
+    Args:
+        query: The search query. For "semantic", use natural language
+               (e.g., "authentication handling"). For "function", use the
+               function name (e.g., "invoke_agent" or "CostTracker.record").
+               For "module", use the relative file path.
+        search_type: One of "semantic", "function", "callers", "callees", "module".
+
+    Returns:
+        JSON string with search results including module paths, descriptions,
+        relevance scores, and function lists. Returns empty results (not error)
+        if the Knowledge Base has not been indexed yet.
+    """
+    from src.core.knowledge.query_api import QueryAPI
+
+    project_id = os.environ.get("PROJECT_ID", "")
+    if not project_id:
+        return json.dumps({"results": [], "message": "PROJECT_ID not set — Code KB unavailable"})
+
+    try:
+        api = QueryAPI(project_id=project_id)
+
+        if search_type == "module":
+            knowledge = api.query_module(query)
+            if not knowledge:
+                return json.dumps({"results": [], "query": query, "search_type": search_type})
+            return json.dumps({
+                "results": [{
+                    "module_path": knowledge.module_path,
+                    "description": knowledge.description,
+                    "functions": knowledge.functions[:20],
+                    "classes": knowledge.classes[:10],
+                    "calls_to": knowledge.calls_to[:15],
+                    "called_by": knowledge.called_by[:10],
+                    "line_count": knowledge.line_count,
+                }],
+                "query": query,
+                "search_type": search_type,
+            }, indent=2)
+
+        elif search_type == "function":
+            results = api.query_function(query)
+            return json.dumps({
+                "results": [
+                    {
+                        "module_path": r.module_path,
+                        "relevance_score": r.relevance_score,
+                        "description": r.description[:200],
+                        "functions": r.functions[:10],
+                    }
+                    for r in results[:10]
+                ],
+                "query": query,
+                "search_type": search_type,
+            }, indent=2)
+
+        elif search_type == "callers":
+            results = api.get_callers(query)
+            return json.dumps({
+                "results": [
+                    {
+                        "module_path": r.module_path,
+                        "relevance_score": r.relevance_score,
+                        "description": r.description[:200],
+                    }
+                    for r in results[:10]
+                ],
+                "query": query,
+                "search_type": search_type,
+            }, indent=2)
+
+        elif search_type == "callees":
+            results = api.get_callees(query)
+            return json.dumps({
+                "results": [
+                    {
+                        "module_path": r.module_path,
+                        "relevance_score": r.relevance_score,
+                        "description": r.description[:200],
+                        "metadata": r.metadata,
+                    }
+                    for r in results[:10]
+                ],
+                "query": query,
+                "search_type": search_type,
+            }, indent=2)
+
+        else:  # semantic (default)
+            results = api.search_by_description(query, top_k=10)
+            return json.dumps({
+                "results": [
+                    {
+                        "module_path": r.module_path,
+                        "relevance_score": r.relevance_score,
+                        "description": r.description[:200],
+                        "match_type": r.match_type,
+                    }
+                    for r in results[:10]
+                ],
+                "query": query,
+                "search_type": search_type,
+            }, indent=2)
+
+    except Exception as e:
+        logger.warning("query_code_kb failed: %s", e)
+        return json.dumps({"results": [], "error": str(e), "query": query})
+
+
+@tool
 def read_factory_metrics(task_id: str) -> str:
     """Read DORA metrics for a specific task (read-only observability).
 
@@ -406,6 +528,6 @@ def read_factory_health(window_days: int = 30) -> str:
         return json.dumps({"error": str(e), "window_days": window_days})
 
 
-RECON_TOOLS = [read_spec, run_shell_command]
-ENGINEERING_TOOLS = [read_spec, write_artifact, run_shell_command, update_github_issue, update_gitlab_issue, update_asana_task, create_github_pull_request, create_gitlab_merge_request]
+RECON_TOOLS = [read_spec, run_shell_command, query_code_kb]
+ENGINEERING_TOOLS = [read_spec, write_artifact, run_shell_command, query_code_kb, update_github_issue, update_gitlab_issue, update_asana_task, create_github_pull_request, create_gitlab_merge_request]
 REPORTING_TOOLS = [write_artifact, update_github_issue, update_gitlab_issue, update_asana_task, read_factory_metrics, read_factory_health]

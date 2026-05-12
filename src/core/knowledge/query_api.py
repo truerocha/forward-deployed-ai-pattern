@@ -209,46 +209,116 @@ class QueryAPI:
         self, text: str, top_k: int = _DEFAULT_TOP_K
     ) -> list[QueryResult]:
         """
-        Semantic search over module descriptions using vector similarity.
+        Hybrid search over module descriptions combining vector + keyword.
+
+        Uses a weighted combination of:
+          - Vector similarity (0.6 weight): semantic meaning via embeddings
+          - Keyword overlap (0.4 weight): exact term matching on descriptions
+
+        This hybrid approach resolves the linguistic impedance mismatch:
+        vector search finds semantically similar concepts while keyword
+        search catches exact identifiers and technical terms.
 
         Args:
             text: Natural language query describing what you're looking for.
             top_k: Maximum number of results to return.
 
         Returns:
-            List of QueryResult ordered by vector similarity score.
+            List of QueryResult ordered by combined relevance score.
         """
         if not text.strip():
             return []
 
-        # Get query embedding
+        # Attempt vector search
         query_embedding = self._embed_text(text)
-        if not query_embedding:
-            # Fall back to keyword matching on descriptions
-            return self._keyword_search_descriptions(text, top_k)
+        vector_results: list[QueryResult] = []
+        keyword_results: list[QueryResult] = []
 
-        # Search vector entries
-        table = self._dynamodb.Table(self._knowledge_table)
-        vector_results = self._vector_search(table, query_embedding, top_k)
-
-        results: list[QueryResult] = []
-        for entry_id, score, metadata in vector_results:
-            module_path = metadata.get("module_path", "")
-            if not module_path:
-                continue
-
-            description = metadata.get("text", "")
-            results.append(
-                QueryResult(
-                    module_path=module_path,
-                    relevance_score=round(score * _WEIGHT_VECTOR_SIMILARITY, 4),
-                    match_type="vector",
-                    description=description,
-                    metadata=metadata,
+        # Vector path (semantic similarity)
+        if query_embedding:
+            table = self._dynamodb.Table(self._knowledge_table)
+            raw_vector = self._vector_search(table, query_embedding, top_k * 2)
+            for entry_id, score, metadata in raw_vector:
+                module_path = metadata.get("module_path", "")
+                if not module_path:
+                    continue
+                vector_results.append(
+                    QueryResult(
+                        module_path=module_path,
+                        relevance_score=score,
+                        match_type="vector",
+                        description=metadata.get("text", ""),
+                        metadata=metadata,
+                    )
                 )
-            )
 
-        return results
+        # Keyword path (exact term matching) — always run for hybrid
+        keyword_results = self._keyword_search_descriptions(text, top_k * 2)
+
+        # Merge results with weighted scoring
+        merged = self._merge_hybrid_results(vector_results, keyword_results, top_k)
+        return merged
+
+    def _merge_hybrid_results(
+        self,
+        vector_results: list[QueryResult],
+        keyword_results: list[QueryResult],
+        top_k: int,
+    ) -> list[QueryResult]:
+        """Merge vector and keyword results with weighted scoring.
+
+        Hybrid formula per module:
+          combined_score = 0.6 * vector_score + 0.4 * keyword_score
+
+        If a module appears in both result sets, scores are combined.
+        If it appears in only one, the missing score is treated as 0.
+        """
+        _VECTOR_WEIGHT = 0.6
+        _KEYWORD_WEIGHT = 0.4
+
+        # Build score maps by module_path
+        vector_scores: dict[str, tuple[float, QueryResult]] = {}
+        for r in vector_results:
+            if r.module_path not in vector_scores or r.relevance_score > vector_scores[r.module_path][0]:
+                vector_scores[r.module_path] = (r.relevance_score, r)
+
+        keyword_scores: dict[str, tuple[float, QueryResult]] = {}
+        for r in keyword_results:
+            if r.module_path not in keyword_scores or r.relevance_score > keyword_scores[r.module_path][0]:
+                keyword_scores[r.module_path] = (r.relevance_score, r)
+
+        # Combine all unique module paths
+        all_modules = set(vector_scores.keys()) | set(keyword_scores.keys())
+
+        combined: list[QueryResult] = []
+        for module_path in all_modules:
+            v_score = vector_scores.get(module_path, (0.0, None))[0]
+            k_score = keyword_scores.get(module_path, (0.0, None))[0]
+
+            combined_score = _VECTOR_WEIGHT * v_score + _KEYWORD_WEIGHT * k_score
+
+            # Use the result object from whichever source had the higher score
+            base_result = (
+                vector_scores.get(module_path, (0.0, None))[1]
+                or keyword_scores.get(module_path, (0.0, None))[1]
+            )
+            if base_result:
+                combined.append(
+                    QueryResult(
+                        module_path=module_path,
+                        relevance_score=round(combined_score, 4),
+                        match_type="hybrid" if v_score > 0 and k_score > 0 else base_result.match_type,
+                        description=base_result.description,
+                        functions=base_result.functions,
+                        classes=base_result.classes,
+                        calls_to=base_result.calls_to,
+                        called_by=base_result.called_by,
+                        metadata=base_result.metadata,
+                    )
+                )
+
+        combined.sort(key=lambda r: r.relevance_score, reverse=True)
+        return combined[:top_k]
 
     def get_callers(self, function_name: str) -> list[QueryResult]:
         """
