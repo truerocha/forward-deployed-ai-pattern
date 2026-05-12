@@ -116,9 +116,21 @@ def _handle_ecs_state_change(event):
 
 
 def _handle_stuck_detection(event):
-    """Periodic check for tasks stuck in early stages."""
+    """Periodic check for tasks stuck in early stages — self-heals them.
+
+    Instead of just warning, this now actively heals stuck tasks:
+    1. Marks them as FAILED with diagnostic reason
+    2. Releases concurrency slot (decrement counter)
+    3. Emits a visible event for the portal
+    4. Sends alert to operator
+
+    The self-healing reaper in the orchestrator handles auto-retry.
+    This Lambda handles the case where NO orchestrator is running
+    (because ECS failed to start — the reaper can't run if the container never started).
+    """
     cutoff = (datetime.now(timezone.utc) - timedelta(minutes=STUCK_THRESHOLD_MINUTES)).isoformat()
     stuck_count = 0
+    healed_tasks = []
 
     for status in ("READY", "IN_PROGRESS"):
         items = task_table.query(
@@ -127,40 +139,89 @@ def _handle_stuck_detection(event):
         ).get("Items", [])
 
         for item in items:
-            current_stage = item.get("current_stage", "")
-            updated_at = item.get("updated_at", item.get("created_at", ""))
+            task_id = item.get("task_id", "")
+            # Skip CONFIG# and COUNTER# items
+            if task_id.startswith("CONFIG#") or task_id.startswith("COUNTER#"):
+                continue
 
+            current_stage = item.get("current_stage", "")
+            # Only heal tasks stuck in early stages (ECS likely failed to start)
             if current_stage not in ("ingested", "workspace", ""):
                 continue
 
-            if updated_at and updated_at < cutoff:
-                task_id = item["task_id"]
-                stuck_duration = _compute_stuck_minutes(updated_at)
+            # Use created_at for staleness (not updated_at which gets refreshed by warnings)
+            created_at = item.get("created_at", "")
+            if not created_at or created_at > cutoff:
+                continue
 
-                logger.warning(
-                    "Stuck task detected: %s (stage=%s, stuck=%dmin)",
-                    task_id, current_stage, stuck_duration,
+            # Check if already being warned repeatedly (prevent infinite warnings)
+            # If task has been stuck for >10 min, heal it instead of warning again
+            stuck_duration = _compute_stuck_minutes(created_at)
+            if stuck_duration < STUCK_THRESHOLD_MINUTES:
+                continue
+
+            if stuck_duration >= 10:
+                # HEAL: mark as failed and release slot
+                error_msg = (
+                    f"Self-healed by Lambda: stuck in '{current_stage}' for {stuck_duration}min. "
+                    f"ECS container never started or crashed before updating DynamoDB."
                 )
-
-                _append_event(
+                try:
+                    task_table.update_item(
+                        Key={"task_id": task_id},
+                        UpdateExpression="SET #s = :status, #e = :error, current_stage = :stage",
+                        ExpressionAttributeNames={"#s": "status", "#e": "error"},
+                        ExpressionAttributeValues={
+                            ":status": "FAILED",
+                            ":error": error_msg,
+                            ":stage": "failed",
+                        },
+                    )
+                    # Decrement atomic counter
+                    repo = item.get("repo", "")
+                    if repo:
+                        task_table.update_item(
+                            Key={"task_id": f"COUNTER#{repo}"},
+                            UpdateExpression="ADD active_count :dec",
+                            ExpressionAttributeValues={":dec": -1},
+                        )
+                    healed_tasks.append(task_id)
+                    logger.info("Self-healed stuck task %s (stage=%s, age=%dmin)", task_id, current_stage, stuck_duration)
+                except Exception as e:
+                    logger.error("Failed to heal task %s: %s", task_id, e)
+            else:
+                # First detection (5-10 min): emit warning only (don't update updated_at)
+                _append_event_no_timestamp_update(
                     task_id, "error",
                     f"⚠️ Task stuck in '{current_stage}' for {stuck_duration}min — ECS may have failed to start",
                 )
-                stuck_count += 1
 
-    if stuck_count > 0:
+            stuck_count += 1
+
+    if healed_tasks:
+        _send_alert(
+            subject=f"[{ENVIRONMENT}] Self-healed {len(healed_tasks)} stuck task(s)",
+            message=(
+                f"Stuck Task Self-Healing\n\n"
+                f"Healed {len(healed_tasks)} task(s) stuck in early stages for >{STUCK_THRESHOLD_MINUTES}min.\n"
+                f"Tasks: {', '.join(healed_tasks)}\n"
+                f"Action: Tasks marked FAILED, concurrency slots released.\n"
+                f"Next orchestrator start will auto-retry eligible tasks.\n"
+                f"Timestamp: {datetime.now(timezone.utc).isoformat()}\n"
+            ),
+        )
+    elif stuck_count > 0:
         _send_alert(
             subject=f"[{ENVIRONMENT}] {stuck_count} stuck task(s) detected",
             message=(
                 f"Stuck Task Detection\n\n"
                 f"Found {stuck_count} task(s) stuck in early stages for >{STUCK_THRESHOLD_MINUTES}min.\n"
-                f"This usually means the ECS container failed to start.\n\n"
-                f"Action: Check ECS task status and CloudWatch logs.\n"
+                f"Will self-heal at 10min threshold.\n"
                 f"Timestamp: {datetime.now(timezone.utc).isoformat()}\n"
             ),
         )
 
-    return {"statusCode": 200, "body": f"checked: {stuck_count} stuck"}
+    return {"statusCode": 200, "body": f"checked: {stuck_count} stuck, {len(healed_tasks)} healed"}
 
 
 def _extract_task_id_from_overrides(detail):
@@ -228,9 +289,24 @@ def _append_event(task_id, event_type, message):
             Key={"task_id": task_id},
             UpdateExpression="SET events = list_append(if_not_exists(events, :empty), :evt), updated_at = :now",
             ExpressionAttributeValues={
-                ":evt": [{"ts": datetime.now(timezone.utc).isoformat(), "type": event_type, "msg": message[:200]}],
+                ":evt": [{"ts": datetime.now(timezone.utc).isoformat(), "type": event_type, "msg": message[:500]}],
                 ":empty": [],
                 ":now": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+    except Exception as e:
+        logger.warning("Failed to append event for %s: %s", task_id, e)
+
+
+def _append_event_no_timestamp_update(task_id, event_type, message):
+    """Append an event WITHOUT updating updated_at (prevents staleness clock reset)."""
+    try:
+        task_table.update_item(
+            Key={"task_id": task_id},
+            UpdateExpression="SET events = list_append(if_not_exists(events, :empty), :evt)",
+            ExpressionAttributeValues={
+                ":evt": [{"ts": datetime.now(timezone.utc).isoformat(), "type": event_type, "msg": message[:500]}],
+                ":empty": [],
             },
         )
     except Exception as e:
