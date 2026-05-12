@@ -202,6 +202,9 @@ class DashboardCallback:
         The Strands SDK streams tool input as partial JSON chunks.
         We accumulate and when we detect a meaningful command,
         extract what the agent is doing (file path, git op, test run).
+
+        COE: Wait for sufficient input (>60 chars or closing quote) before
+        classifying, to avoid emitting truncated filenames from partial chunks.
         """
         if not hasattr(self, "_tool_input_acc"):
             self._tool_input_acc = ""
@@ -215,6 +218,12 @@ class DashboardCallback:
 
         # Don't emit more than one context event per tool call
         if self._tool_context_emitted:
+            return
+
+        # Wait for sufficient input before classifying (avoids truncated filenames)
+        # Shell commands in JSON are typically: {"command": "cat path/to/file.py"}
+        # We need at least 60 chars or a closing quote to have the full command
+        if len(self._tool_input_acc) < 60 and '"' not in self._tool_input_acc[20:]:
             return
 
         # Try to extract meaningful context
