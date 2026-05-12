@@ -267,59 +267,147 @@ def check_concurrency(repo: str, max_concurrent: int = 2) -> tuple[bool, int]:
 
 
 def reap_stuck_tasks(max_age_minutes: int = 60) -> list[str]:
-    """Reap tasks stuck in IN_PROGRESS/RUNNING beyond the max age.
+    """Self-healing: detect stuck tasks, cancel them, release slots, and auto-retry.
 
-    ECS tasks can crash without updating DynamoDB. These orphaned records
-    block the concurrency guard permanently. This function marks them as
-    FAILED so slots are freed.
+    Tasks can get stuck when:
+    - ECS fails to start (image pull error, capacity exhaustion)
+    - Container crashes before updating DynamoDB
+    - Network partition prevents DynamoDB writes
 
-    Should be called periodically (e.g., by a CloudWatch Events rule or
-    before each concurrency check).
+    Self-healing actions:
+    1. Mark stuck task as FAILED with diagnostic reason
+    2. Release the atomic concurrency counter slot
+    3. If task was in early stages (ingested/workspace) → auto-retry via re-queue
+    4. If task was in later stages (swe/review) → fail permanently (partial work exists)
+
+    Thresholds:
+    - Early stages (ingested, workspace, reconnaissance): 10 min
+    - Later stages (swe, code, review, reporting): 60 min
 
     Args:
-        max_age_minutes: Tasks older than this (since last update) are reaped.
+        max_age_minutes: Override for later-stage threshold. Early stages always use 10 min.
 
     Returns:
         List of task_ids that were reaped.
     """
     table = _get_table()
     reaped = []
-    cutoff = datetime.now(timezone.utc).timestamp() - (max_age_minutes * 60)
+    now = datetime.now(timezone.utc)
 
-    for status in ("IN_PROGRESS", "RUNNING"):
+    # Early stages: likely ECS failed to start (safe to retry)
+    early_stages = {"ingested", "workspace", "reconnaissance", "intake"}
+    early_threshold_minutes = 10
+
+    for status in ("IN_PROGRESS", "RUNNING", "READY"):
         items = table.query(
             IndexName="status-created-index",
             KeyConditionExpression=Key("status").eq(status),
         ).get("Items", [])
 
         for item in items:
+            # Skip CONFIG# and COUNTER# items
+            task_id = item.get("task_id", "")
+            if task_id.startswith("CONFIG#") or task_id.startswith("COUNTER#"):
+                continue
+
             updated_at = item.get("updated_at", "")
             if not updated_at:
                 continue
             try:
-                updated_ts = datetime.fromisoformat(updated_at.replace("Z", "+00:00")).timestamp()
+                updated_ts = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
             except (ValueError, TypeError):
                 continue
 
-            if updated_ts < cutoff:
-                task_id = item["task_id"]
-                table.update_item(
-                    Key={"task_id": task_id},
-                    UpdateExpression="SET #s = :status, #e = :error, updated_at = :now",
-                    ExpressionAttributeNames={"#s": "status", "#e": "error"},
-                    ExpressionAttributeValues={
-                        ":status": "FAILED",
-                        ":error": f"Reaped: stuck in {status} for >{max_age_minutes}min (container likely crashed)",
-                        ":now": _now(),
-                    },
-                )
-                reaped.append(task_id)
-                logger.warning(
-                    "Reaped stuck task %s (status=%s, last_update=%s)",
-                    task_id, status, updated_at,
-                )
+            age_minutes = (now - updated_ts).total_seconds() / 60
+            current_stage = item.get("current_stage", "unknown")
+            is_early_stage = current_stage in early_stages
+
+            # Apply appropriate threshold
+            threshold = early_threshold_minutes if is_early_stage else max_age_minutes
+            if age_minutes < threshold:
+                continue
+
+            # Reap the task
+            repo = item.get("repo", "")
+            error_msg = (
+                f"Self-healed: stuck in '{current_stage}' for {int(age_minutes)}min "
+                f"(threshold: {threshold}min). "
+                f"{'Auto-retry eligible (early stage).' if is_early_stage else 'Permanent failure (late stage — partial work may exist).'}"
+            )
+
+            table.update_item(
+                Key={"task_id": task_id},
+                UpdateExpression="SET #s = :status, #e = :error, updated_at = :now",
+                ExpressionAttributeNames={"#s": "status", "#e": "error"},
+                ExpressionAttributeValues={
+                    ":status": "FAILED",
+                    ":error": error_msg,
+                    ":now": _now(),
+                },
+            )
+
+            # Release atomic counter slot
+            if repo:
+                decrement_active_counter(repo)
+
+            reaped.append(task_id)
+            logger.warning(
+                "Self-healed stuck task %s (stage=%s, age=%.0fmin, repo=%s, retry=%s)",
+                task_id, current_stage, age_minutes, repo, is_early_stage,
+            )
+
+            # Auto-retry for early-stage failures (ECS didn't start)
+            if is_early_stage and repo:
+                issue_id = item.get("issue_id", "")
+                title = item.get("title", "")
+                if issue_id and title:
+                    _auto_retry_task(item)
 
     return reaped
+
+
+def _auto_retry_task(failed_item: dict) -> str | None:
+    """Re-queue a failed early-stage task for automatic retry.
+
+    Only retries once (checks for existing retry marker to prevent infinite loops).
+    Creates a new READY task with the same spec, linked to the same issue.
+    """
+    task_id = failed_item.get("task_id", "")
+    issue_id = failed_item.get("issue_id", "")
+    retry_count = int(failed_item.get("retry_count", 0))
+
+    # Safety: max 1 auto-retry per task (prevent infinite retry loops)
+    if retry_count >= 1:
+        logger.info("Task %s already retried %d time(s) — no further auto-retry", task_id, retry_count)
+        return None
+
+    # Create a new task (reuse spec content from the failed one)
+    new_task = enqueue_task(
+        title=failed_item.get("title", "Retried task"),
+        spec_content=failed_item.get("spec_content", ""),
+        source=failed_item.get("source", "retry"),
+        issue_id=issue_id,
+        priority=failed_item.get("priority", "P2"),
+    )
+
+    # Mark the new task with retry metadata
+    table = _get_table()
+    table.update_item(
+        Key={"task_id": new_task["task_id"]},
+        UpdateExpression="SET retry_of = :orig, retry_count = :count, repo = :repo, issue_url = :url",
+        ExpressionAttributeValues={
+            ":orig": task_id,
+            ":count": retry_count + 1,
+            ":repo": failed_item.get("repo", ""),
+            ":url": failed_item.get("issue_url", ""),
+        },
+    )
+
+    logger.info(
+        "Auto-retry: %s → %s (issue=%s, retry #%d)",
+        task_id, new_task["task_id"], issue_id, retry_count + 1,
+    )
+    return new_task["task_id"]
 
 
 def retry_queued_tasks(repo: str) -> list[str]:
