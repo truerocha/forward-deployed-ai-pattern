@@ -197,41 +197,19 @@ class DashboardCallback:
             self._context_count = 0
 
     def _handle_tool_input(self, input_chunk: str) -> None:
-        """Accumulate tool input and extract context from shell commands.
+        """Accumulate tool input (no-op for shell commands).
 
-        The Strands SDK streams tool input as partial JSON chunks.
-        We accumulate and when we detect a meaningful command,
-        extract what the agent is doing (file path, git op, test run).
+        Shell command input arrives as partial JSON chunks that cannot be
+        reliably parsed for filenames. The _handle_tool_start already provides
+        aggregate observability ("Executing N shell operations...").
 
-        COE: Wait for sufficient input (>60 chars or closing quote) before
-        classifying, to avoid emitting truncated filenames from partial chunks.
+        COE: Previous attempts to extract filenames from partial chunks produced
+        truncated messages ("Reading: enrichm"). The streaming SDK delivers input
+        in unpredictable chunk sizes — classification is only reliable after the
+        full input is available, which doesn't happen until tool completion.
         """
-        if not hasattr(self, "_tool_input_acc"):
-            self._tool_input_acc = ""
-            self._tool_context_emitted = False
-
-        self._tool_input_acc += input_chunk
-
-        # Only parse for run_shell_command (the generic tool)
-        if not hasattr(self, "_last_tool_name") or self._last_tool_name != "run_shell_command":
-            return
-
-        # Don't emit more than one context event per tool call
-        if self._tool_context_emitted:
-            return
-
-        # Wait for sufficient input before classifying (avoids truncated filenames)
-        # Shell commands in JSON are typically: {"command": "cat path/to/file.py"}
-        # We need at least 60 chars or a closing quote to have the full command
-        if len(self._tool_input_acc) < 60 and '"' not in self._tool_input_acc[20:]:
-            return
-
-        # Try to extract meaningful context
-        context = self._classify_shell_command(self._tool_input_acc)
-        if context:
-            self._tool_context_emitted = True
-            self._buffer.append({"type": "info", "msg": context})
-            self._maybe_flush()
+        # No-op: shell command classification removed (unreliable on partial chunks)
+        pass
 
     @staticmethod
     def _classify_shell_command(partial_input: str) -> str:
