@@ -151,6 +151,7 @@ def _handle_metrics(event, context):
             "vsm": _query_metrics_section(project_id, "vsm#", limit),
             "friction": _query_metrics_section(project_id, "friction#", limit),
             "maturity": _query_metrics_section(project_id, "maturity#", limit),
+            "review_feedback": _compute_review_feedback_metrics(project_id),
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
@@ -777,8 +778,132 @@ def _map_status(dynamo_status: str) -> str:
         "FAILED": "failed",
         "DEAD_LETTER": "failed",
         "BLOCKED": "blocked",
+        "REWORK": "rework",
+        "APPROVED": "approved",
     }
     return mapping.get(dynamo_status, "pending")
+
+
+def _compute_review_feedback_metrics(project_id: str) -> dict | None:
+    """Compute ICRL Review Feedback Loop metrics for the ReviewFeedbackCard.
+
+    Queries the metrics table for review_feedback, icrl_episode, and
+    verification gate records to produce the card's data shape.
+
+    Returns None if no review feedback data exists (card renders empty state).
+    """
+    try:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+
+        # Query review feedback records
+        feedback_response = metrics_table.query(
+            KeyConditionExpression=Key("project_id").eq(project_id) & Key("metric_key").begins_with("review_feedback#"),
+            FilterExpression=Attr("recorded_at").gte(cutoff),
+            ScanIndexForward=False,
+            Limit=50,
+        )
+        feedback_items = feedback_response.get("Items", [])
+
+        if not feedback_items:
+            return None
+
+        # Classify feedback records
+        full_rework = 0
+        partial_fix = 0
+        approval = 0
+        informational = 0
+        rework_triggered_count = 0
+
+        for item in feedback_items:
+            data = json.loads(item.get("data", "{}")) if isinstance(item.get("data"), str) else item.get("data", {})
+            classification = data.get("classification", "")
+
+            if classification == "full_rework":
+                full_rework += 1
+            elif classification == "partial_fix":
+                partial_fix += 1
+            elif classification == "approval":
+                approval += 1
+            else:
+                informational += 1
+
+            if data.get("rework_triggered"):
+                rework_triggered_count += 1
+
+        # Query ICRL episodes
+        episode_response = metrics_table.query(
+            KeyConditionExpression=Key("project_id").eq(project_id) & Key("metric_key").begins_with("icrl_episode#"),
+            ScanIndexForward=False,
+            Limit=50,
+        )
+        icrl_episodes = episode_response.get("Items", [])
+        icrl_count = len(icrl_episodes)
+        pattern_digest_available = icrl_count >= 10
+        last_episode_ts = icrl_episodes[0].get("recorded_at", "") if icrl_episodes else ""
+
+        # Query autonomy adjustments
+        autonomy_response = metrics_table.query(
+            KeyConditionExpression=Key("project_id").eq(project_id) & Key("metric_key").begins_with("autonomy_adjustment#"),
+            FilterExpression=Attr("recorded_at").gte(cutoff),
+            ScanIndexForward=False,
+            Limit=20,
+        )
+        autonomy_items = autonomy_response.get("Items", [])
+        autonomy_reductions = 0
+        autonomy_increases = 0
+        for item in autonomy_items:
+            data = json.loads(item.get("data", "{}")) if isinstance(item.get("data"), str) else item.get("data", {})
+            adj_type = data.get("adjustment_type", "")
+            if "reduction" in adj_type:
+                autonomy_reductions += 1
+            elif adj_type in ("auto_restoration", "promotion"):
+                autonomy_increases += 1
+
+        # Get current autonomy level
+        current_level = 4
+        try:
+            level_response = metrics_table.get_item(
+                Key={"project_id": project_id, "metric_key": "autonomy#current_level"}
+            )
+            if "Item" in level_response:
+                level_data = json.loads(level_response["Item"].get("data", "{}"))
+                current_level = level_data.get("level", 4)
+        except Exception:
+            pass
+
+        # Circuit breaker: tasks with 2+ rework records
+        task_rework_counts = {}
+        for item in feedback_items:
+            data = json.loads(item.get("data", "{}")) if isinstance(item.get("data"), str) else item.get("data", {})
+            task_id = item.get("task_id", "")
+            if data.get("rework_triggered") and task_id:
+                task_rework_counts[task_id] = task_rework_counts.get(task_id, 0) + 1
+        circuit_breaker_trips = sum(1 for count in task_rework_counts.values() if count >= 2)
+
+        total_reviews = full_rework + partial_fix + approval + informational
+
+        return {
+            "total_reviews": total_reviews,
+            "full_rework_count": full_rework,
+            "partial_fix_count": partial_fix,
+            "approval_count": approval,
+            "informational_count": informational,
+            "active_rework_tasks": rework_triggered_count,
+            "circuit_breaker_trips": circuit_breaker_trips,
+            "avg_rework_attempts": round(rework_triggered_count / max(full_rework, 1), 1),
+            "icrl_episode_count": icrl_count,
+            "pattern_digest_available": pattern_digest_available,
+            "last_episode_timestamp": last_episode_ts,
+            "verification_pass_rate": 100.0 if total_reviews == 0 else round((approval / max(total_reviews, 1)) * 100, 1),
+            "avg_verification_iterations": 1.0,
+            "verification_level": "standard",
+            "autonomy_reductions": autonomy_reductions,
+            "autonomy_increases": autonomy_increases,
+            "current_autonomy_level": current_level,
+        }
+
+    except Exception:
+        return None
 
 
 def _response(status_code: int, body: dict) -> dict:

@@ -213,6 +213,11 @@ _AGENT_CAPABILITIES: dict[str, dict[str, Any]] = {
         "model_tier": "standard",
         "cost_weight": 0.5,
     },
+    "fde-pr-reviewer-agent": {
+        "strengths": ["review", "spec-alignment", "quality-gate", "candid-feedback"],
+        "model_tier": "reasoning",
+        "cost_weight": 1.0,
+    },
 }
 
 MAX_RECURSIVE_DEPTH = 2

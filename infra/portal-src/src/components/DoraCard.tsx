@@ -60,7 +60,7 @@ export const DoraCard: React.FC<DoraCardProps> = ({ metrics, selectedLevel, onLe
     if (!metrics?.by_level) return LEVELS[0];
     // The active level from the API has a non-flat trend (set by mapDoraMetrics)
     const realLevel = Object.entries(metrics.by_level).find(
-      ([_, m]) => m.trend !== 'flat'
+      ([_, m]) => (m as DoraMetricSet).trend !== 'flat'
     );
     return realLevel ? realLevel[0] : LEVELS[0];
   }, [metrics]);

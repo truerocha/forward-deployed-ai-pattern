@@ -58,6 +58,12 @@ def main() -> None:
         logger.error("No event data found in environment. Exiting.")
         sys.exit(1)
 
+    # Check if this is a rework re-execution (ADR-027: Review Feedback Loop)
+    if os.environ.get("EVENT_DETAIL_TYPE") == "task.rework_requested":
+        logger.info("REWORK MODE: Re-execution triggered by review feedback")
+        _handle_rework_execution()
+        sys.exit(0)
+
     logger.info(
         "Event received: source=%s, issue=#%s",
         event.get("source", "unknown"),
@@ -228,6 +234,151 @@ def _reconstruct_event() -> dict:
         }
 
     return {}
+
+
+def _handle_rework_execution() -> None:
+    """Handle rework re-execution triggered by review feedback (ADR-027).
+
+    Uses MCTS Planner for multi-trajectory exploration and injects ICRL
+    episode history for in-context learning.
+    """
+    task_id = os.environ.get("EVENT_TASK_ID", "")
+    repo = os.environ.get("EVENT_REPO", "")
+    pr_number = os.environ.get("EVENT_PR_NUMBER", "")
+    rework_attempt = int(os.environ.get("EVENT_REWORK_ATTEMPT", "1"))
+    reviewer = os.environ.get("EVENT_REVIEWER", "")
+    constraint = os.environ.get("EVENT_REWORK_CONSTRAINT", "")
+
+    logger.info(
+        "Rework execution: task=%s repo=%s pr=#%s attempt=%d reviewer=%s",
+        task_id, repo, pr_number, rework_attempt, reviewer,
+    )
+
+    from src.core.memory.icrl_episode_store import ICRLEpisodeStore
+    from src.core.orchestration.mcts_planner import MCTSPlanner
+
+    project_id = os.environ.get("PROJECT_ID", "global")
+    metrics_table = os.environ.get("METRICS_TABLE", "")
+    episode_store = ICRLEpisodeStore(project_id=project_id, metrics_table=metrics_table)
+    icrl_context = episode_store.get_context_for_rework(repo=repo)
+
+    if icrl_context:
+        logger.info("ICRL context loaded: %d chars from episode history", len(icrl_context))
+
+    task_description = (
+        f"REWORK TASK (attempt {rework_attempt}/2)\n"
+        f"Repository: {repo}\n"
+        f"Original PR: #{pr_number} (rejected by {reviewer})\n\n"
+        f"CONSTRAINT:\n{constraint}\n"
+    )
+
+    try:
+        from src.core.orchestration.conductor import Conductor
+        from src.core.orchestration.distributed_orchestrator import (
+            DistributedOrchestrator, SquadManifest, AgentSpec,
+        )
+
+        conductor = Conductor()
+        planner = MCTSPlanner(conductor=conductor, num_candidates=3)
+
+        mcts_result = planner.explore(
+            task_id=task_id,
+            task_description=task_description,
+            organism_level="O3",
+            rework_feedback=constraint,
+            icrl_context=icrl_context,
+            knowledge_context={"repo": repo, "rework_attempt": rework_attempt},
+        )
+
+        logger.info(
+            "MCTS exploration: selected=%d score=%.2f diversity=%s",
+            mcts_result.selected_index,
+            mcts_result.selected_candidate.verification_score if mcts_result.selected_candidate else 0,
+            mcts_result.diversity_achieved,
+        )
+
+        sys.path.insert(0, "/app")
+        from agents import task_queue
+
+        task_queue.update_task_stage(task_id, "rework")
+        task_queue.append_task_event(
+            task_id, "reasoning",
+            f"Rework attempt {rework_attempt}: MCTS selected plan {mcts_result.selected_index}",
+            phase="rework",
+            criteria=f"Attempt: {rework_attempt}/2 | Reviewer: {reviewer}",
+            context=f"ICRL episodes: {episode_store.get_episode_count(repo)} | "
+                    f"Constraint: {constraint[:200]}",
+        )
+
+        selected = mcts_result.selected_candidate
+        if selected and selected.plan_data.get("steps"):
+            stages = {}
+            for i, step in enumerate(selected.plan_data["steps"]):
+                stages[i + 1] = [AgentSpec(
+                    role=step.get("agent_role", "swe-developer-agent"),
+                    model_tier=step.get("model_tier", "reasoning"),
+                    stage=i + 1,
+                )]
+            manifest = SquadManifest(
+                task_id=task_id, project_id=repo, organism_level="O3",
+                user_value_statement=f"Rework: {constraint[:100]}",
+                autonomy_level=4, stages=stages,
+                knowledge_context={
+                    "rework_attempt": rework_attempt,
+                    "rework_constraint": constraint,
+                    "icrl_context": icrl_context[:2000] if icrl_context else "",
+                    "mcts_rationale": mcts_result.selected_rationale,
+                },
+            )
+        else:
+            manifest = SquadManifest(
+                task_id=task_id, project_id=repo, organism_level="O3",
+                user_value_statement=f"Rework: {constraint[:100]}",
+                autonomy_level=4,
+                stages={
+                    1: [AgentSpec(role="swe-developer-agent", model_tier="reasoning", stage=1)],
+                    2: [AgentSpec(role="fde-fidelity-agent", model_tier="fast", stage=2)],
+                },
+                knowledge_context={
+                    "rework_attempt": rework_attempt,
+                    "rework_constraint": constraint,
+                    "icrl_context": icrl_context[:2000] if icrl_context else "",
+                },
+            )
+
+        orchestrator = DistributedOrchestrator(
+            ecs_cluster_arn=os.environ.get("ECS_CLUSTER_ARN", ""),
+            agent_task_family=os.environ.get("AGENT_TASK_FAMILY", ""),
+            agent_subnets=os.environ.get("AGENT_SUBNETS", "").split(","),
+            agent_security_group=os.environ.get("AGENT_SECURITY_GROUP", ""),
+            scd_table=os.environ.get("SCD_TABLE", ""),
+            metrics_table=metrics_table,
+        )
+
+        results = orchestrator.execute(manifest)
+        all_completed = all(r.status.value == "COMPLETED" for r in results)
+
+        logger.info(
+            "Rework pipeline %s: %d/%d stages",
+            "COMPLETED" if all_completed else "PARTIAL",
+            sum(1 for r in results if r.status.value == "COMPLETED"),
+            len(results),
+        )
+
+        task_queue.append_task_event(
+            task_id, "reasoning",
+            f"Rework attempt {rework_attempt} {'completed' if all_completed else 'partial'}",
+            phase="completion",
+        )
+
+    except Exception as e:
+        logger.error("Rework execution failed: %s", str(e))
+        try:
+            sys.path.insert(0, "/app")
+            from agents import task_queue
+            task_queue.append_task_event(task_id, "error", f"Rework failed: {str(e)[:200]}", phase="rework")
+        except Exception:
+            pass
 
 
 def _infer_organism_level(data_contract: dict) -> str:

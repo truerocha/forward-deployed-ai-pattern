@@ -8,6 +8,34 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased] — 2026-05-13
 
+### Added — Review Feedback Loop with ICRL Enhancement (ADR-027)
+- `src/core/governance/review_feedback_processor.py` — Core processor that classifies PR review events (full_rework/partial_fix/approval), records metrics across DORA/Trust/Verification/Happy Time systems, updates Risk Engine weights (Bayesian learning from false negatives), emits rework events via EventBridge, and enforces circuit breaker (max 2 rework attempts per task).
+- `src/core/memory/icrl_episode_store.py` — In-Context Reinforcement Learning episode storage. Stores structured episodes `(task_context, agent_action, human_reward, correction)` from review feedback. Retrieves relevance-filtered episodes for rework context injection. Generates pattern digests after 10+ episodes accumulate. TTL: 30 days.
+- `src/core/governance/verification_reward_gate.py` — Deterministic verification gate providing binary reward signals (Pass/Fail) before PR creation. Runs linter → type-checker → test suite with graceful degradation. Agent gets max 3 inner iterations to achieve all-pass. Replaces estimated rework time with actual measured duration.
+- `src/core/orchestration/mcts_planner.py` — Monte Carlo Tree Search planner for rework re-execution. Generates N=3 diverse candidate plans (sequential/parallel/debate topologies), scores each against feedback alignment and structural quality, selects best viable plan. Extends Conductor with multi-trajectory exploration.
+- `infra/terraform/lambda/review_feedback/index.py` — Lambda handler processing PR review events from EventBridge. Classifies reviews, resolves task_id from task_queue, records metrics, checks circuit breaker, emits rework events, updates task status.
+- `infra/terraform/review_feedback.tf` — Infrastructure: 3 EventBridge rules (pr_review_submitted, pr_rework_comment, task_rework_requested), Lambda function + IAM, ECS target for rework re-execution with feedback context as env vars, CloudWatch alarms for circuit breaker and high rejection rate. Two-way door: `review_feedback_enabled` variable.
+- `infra/portal-src/src/components/ReviewFeedbackCard.tsx` — Portal card displaying ICRL feedback loop metrics: classification breakdown, verification gate pass rate, rework rate (5th DORA metric), ICRL episode count, pattern digest status, autonomy adjustments, circuit breaker alerts. Visible to PM/SWE/SRE/Staff personas.
+- `docs/adr/ADR-027-review-feedback-loop.md` — Architecture decision record (v2) documenting the review feedback loop design, ICRL enhancement (MCTS, episode history, verification gate, structural uncertainty), conditional autonomy model, execution lock pattern, and research grounding.
+
+### Added — PR Reviewer Agent: Three-Level Review Architecture (ADR-028)
+- `infra/docker/agents/fde_pr_reviewer_agent.py` — Independent, isolated PR reviewer agent (Level 1 quality gate). Validates final PR deliverable against original issue spec. Runs in separate ECS task with own ICRL episode store (`icrl_review_episode#` prefix). Reviews 6 dimensions: spec alignment, completeness, security, error handling, test coverage, architecture. Outputs APPROVE/REWORK verdict with structured feedback. Includes DTL Committer decision matrix (`compute_delivery_decision()`).
+- `docs/adr/ADR-028-pr-reviewer-agent-three-level-review.md` — Architecture decision record documenting the three-level review model (L1: agent reviewer, L2: branch evaluation, L3: human), isolation guarantees, DTL decision matrix, and autonomy level unlock (L4/L5 now achievable).
+
+### Changed — Conductor Agent Pool (ADR-028)
+- `src/core/orchestration/conductor.py` — Added `fde-pr-reviewer-agent` to `_AGENT_CAPABILITIES` with strengths: review, spec-alignment, quality-gate, candid-feedback.
+
+### Changed — Portal Persona Assignments (ADR-027)
+- `infra/portal-src/src/components/PersonaFilteredCards.tsx` — Added `ReviewFeedbackCard` to PM, SWE, SRE, and Staff persona views. Imported component and registered in card registry.
+
+### Changed — Task Data Contract Extended (ADR-027)
+- `infra/portal-src/src/services/factoryService.ts` — Added optional fields to `Task` interface: `updated_at`, `created_at`, `rework_attempt`, `rework_feedback`, `rework_constraint`, `original_pr_url`. Backward-compatible (all optional).
+
+### Fixed — Portal TypeScript Compilation Errors
+- `infra/portal-src/src/components/DoraCard.tsx` — Fixed `Property 'trend' does not exist on type 'unknown'` by adding type assertion `(m as DoraMetricSet)` in `Object.entries()` callback.
+- `infra/portal-src/src/mappers/factoryDataMapper.ts` — Fixed `Cannot find name 'AgentStatus'` by adding `AgentStatus` to the import from `../types`.
+- `infra/portal-src/src/services/factoryService.ts` — Fixed `Property 'updated_at' does not exist on type 'Task'` by adding the field to the interface.
+
 ### Added — Synapse 6 & 7: Transparency and Deterministic Harness (ADR-026)
 - `src/core/risk/attp.py` — Agent Thought Transparency Protocol (ATTP): NLA-lite probing of agent hidden reasoning. Includes `AgentThoughtTransparency` dataclass, `probe_agent_transparency()` function, `compute_divergence_score()`, introspection prompt templates, and `ATTPBudget` for cost governance.
 - `src/core/orchestration/task_ownership.py` — Atomic task ownership with lock semantics. Prevents MAST taxonomy's #1 failure mode (two agents claiming same work). Includes `AtomicTaskOwnership`, `TaskAssignment`, timeout detection, and goal ancestry computation.

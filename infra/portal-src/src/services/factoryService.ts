@@ -32,6 +32,12 @@ export interface Task {
   elapsed_ms: number;
   duration_ms: number;
   events: TaskEvent[];
+  updated_at?: string;
+  created_at?: string;
+  rework_attempt?: number;
+  rework_feedback?: string;
+  rework_constraint?: string;
+  original_pr_url?: string;
 }
 
 export interface DashboardData {

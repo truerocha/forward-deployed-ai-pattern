@@ -543,7 +543,7 @@ function inferModelTier(agentName: string): string {
 
 // ─── Agent Identity Resolution (Conductor Plan Metadata) ─────────────────────
 
-import type { Agent, AgentRole } from '../types';
+import type { Agent, AgentRole, AgentStatus } from '../types';
 
 /**
  * Resolves agent identity from Conductor plan metadata stored in task events.

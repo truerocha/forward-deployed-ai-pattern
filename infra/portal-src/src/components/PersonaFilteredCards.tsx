@@ -25,6 +25,7 @@ import { HumanInputCard } from './HumanInputCard';
 import { BranchEvaluationCard } from './BranchEvaluationCard';
 import { ConductorPlanCard } from './ConductorPlanCard';
 import { DoraSunCard } from './DoraSunCard';
+import { ReviewFeedbackCard } from './ReviewFeedbackCard';
 import {
   mapDoraMetrics,
   mapCostMetrics,
@@ -35,11 +36,11 @@ import {
 
 /** Persona card visibility matrix — single source of truth for role-based filtering. */
 const PERSONA_CARDS: Record<string, string[]> = {
-  PM: ['DoraSunCard', 'ValueStreamCard', 'DoraCard', 'CostCard', 'TrustCard', 'NetFrictionCard'],
-  SWE: ['LiveTimeline', 'GateFeedbackCard', 'SquadExecutionCard', 'BranchEvaluationCard', 'HumanInputCard', 'ConductorPlanCard'],
-  SRE: ['DoraSunCard', 'DataQualityCard', 'GateHistoryCard', 'DoraCard', 'CostCard'],
+  PM: ['DoraSunCard', 'ValueStreamCard', 'DoraCard', 'CostCard', 'TrustCard', 'NetFrictionCard', 'ReviewFeedbackCard'],
+  SWE: ['LiveTimeline', 'GateFeedbackCard', 'SquadExecutionCard', 'BranchEvaluationCard', 'HumanInputCard', 'ConductorPlanCard', 'ReviewFeedbackCard'],
+  SRE: ['DoraSunCard', 'DataQualityCard', 'GateHistoryCard', 'DoraCard', 'CostCard', 'ReviewFeedbackCard'],
   Architect: ['MaturityRadar', 'BrainSimCard', 'ConductorPlanCard', 'ValueStreamCard', 'DataQualityCard', 'NetFrictionCard'],
-  Staff: ['DoraSunCard', 'DoraCard', 'MaturityRadar', 'TrustCard', 'CostCard', 'BrainSimCard', 'ValueStreamCard', 'SquadExecutionCard'],
+  Staff: ['DoraSunCard', 'DoraCard', 'MaturityRadar', 'TrustCard', 'CostCard', 'BrainSimCard', 'ValueStreamCard', 'SquadExecutionCard', 'ReviewFeedbackCard'],
 };
 
 interface PersonaFilteredCardsProps {
@@ -70,6 +71,7 @@ export const PersonaFilteredCards: React.FC<PersonaFilteredCardsProps> = ({
     HumanInputCard: <HumanInputCard onRespond={() => {}} />,
     BranchEvaluationCard: <BranchEvaluationCard />,
     ConductorPlanCard: <ConductorPlanCard />,
+    ReviewFeedbackCard: <ReviewFeedbackCard />,
   };
 
   return (

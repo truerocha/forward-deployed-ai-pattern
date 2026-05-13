@@ -58,11 +58,11 @@ flowchart LR
 
 | Persona | Cards | Focus |
 |---------|-------|-------|
-| PM | DoraSun, ValueStream, DORA, Cost, Trust, NetFriction | Business outcomes and delivery health |
-| SWE | Timeline, Gates, Squad, Branch, HumanInput, Conductor | Execution details and agent coordination |
-| SRE | DoraSun, DataQuality, GateHistory, DORA, Cost | Reliability metrics and operational health |
+| PM | DoraSun, ValueStream, DORA, Cost, Trust, NetFriction, ReviewFeedback | Business outcomes, delivery health, rework rate |
+| SWE | Timeline, Gates, Squad, Branch, HumanInput, Conductor, ReviewFeedback | Execution details, agent coordination, verification gate |
+| SRE | DoraSun, DataQuality, GateHistory, DORA, Cost, ReviewFeedback | Reliability metrics, circuit breaker, operational health |
 | Architect | Maturity, BrainSim, Conductor, ValueStream, DataQuality, NetFriction | System design and capability evolution |
-| Staff | DoraSun, DORA, Maturity, Trust, Cost, BrainSim, ValueStream, Squad | Full oversight with strategic focus |
+| Staff | DoraSun, DORA, Maturity, Trust, Cost, BrainSim, ValueStream, Squad, ReviewFeedback | Full oversight with ICRL learning metrics |
 
 ## Component Architecture
 
@@ -72,6 +72,7 @@ flowchart LR
 | `PersonaConfig` | Static mapping of persona to card IDs |
 | `PersonaFilteredCards` | Filters card array, renders only matching cards |
 | `DoraSunCard` | Visualizes Health Pulse as radial gradient (green/yellow/red) |
+| `ReviewFeedbackCard` | ICRL feedback loop metrics: classification, verification gate, rework rate, episodes, autonomy |
 
 ## Design Principles
 
@@ -83,5 +84,6 @@ flowchart LR
 ## Related
 
 - [ADR-017](../adr/ADR-017-react-portal-observability-ux.md) — React Portal architecture
+- [ADR-027](../adr/ADR-027-review-feedback-loop.md) — Review Feedback Loop (ICRL Enhancement)
 - [Design Doc](../design/pec-intelligence-layer.md) — PEC Intelligence Layer
 - [Flow 17](17-dora-forecast.md) — DORA Forecast (produces Health Pulse for DoraSun card)
