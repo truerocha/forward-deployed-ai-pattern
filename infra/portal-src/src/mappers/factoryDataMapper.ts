@@ -540,3 +540,223 @@ function inferModelTier(agentName: string): string {
   if (name.includes('task') || name.includes('intake') || name.includes('reporting')) return 'fast';
   return 'standard';
 }
+
+// ─── Agent Identity Resolution (Conductor Plan Metadata) ─────────────────────
+
+import type { Agent, AgentRole } from '../types';
+
+/**
+ * Resolves agent identity from Conductor plan metadata stored in task events.
+ *
+ * The Conductor stores plan metadata in the task's knowledge_context which
+ * gets emitted as events. This function cross-references ECS agent instances
+ * with the Conductor's WorkflowPlan to produce rich agent identity:
+ *   - Real role name (not "fde-pipeline")
+ *   - Subtask description (what the agent is doing)
+ *   - Model tier (fast/reasoning/deep)
+ *   - Stage position (stage N of M)
+ *   - Topology type (sequential/parallel/debate/recursive)
+ *   - Synapse metadata (paradigm, design quality)
+ *
+ * Graceful degradation: when no Conductor metadata exists (legacy tasks or
+ * monolith mode), falls back to the existing behavior.
+ */
+export function mapAgentsWithConductorPlan(data: DashboardData | null): Agent[] {
+  if (!data) return [];
+
+  const { agents, tasks } = data;
+
+  // Try to extract Conductor plan from the most recent active task
+  const conductorPlan = extractConductorPlan(tasks);
+  const synapseData = extractSynapseAssessment(tasks);
+
+  // If we have Conductor plan metadata, use it for rich agent identity
+  if (conductorPlan && conductorPlan.steps && conductorPlan.steps.length > 0) {
+    return mapFromConductorPlan(agents, conductorPlan, synapseData);
+  }
+
+  // Fallback: derive from task events (existing behavior, improved)
+  return mapFromTaskEvents(data);
+}
+
+interface ConductorPlanMeta {
+  topology: string;
+  steps: Array<{
+    subtask: string;
+    agent_role: string;
+    model_tier: string;
+    step_index: number;
+  }>;
+  rationale: string;
+  recursive_depth: number;
+}
+
+interface SynapseAssessmentMeta {
+  paradigm: string;
+  paradigm_confidence: number;
+  design_quality_score: number;
+  recommended_agents: number;
+  coherent: boolean;
+  epistemic_approach: string;
+}
+
+function extractConductorPlan(tasks: Task[]): ConductorPlanMeta | null {
+  for (const task of tasks) {
+    if (!task.events) continue;
+    for (const event of task.events) {
+      if (event.type === 'conductor_plan' || event.msg?.includes('_conductor_plan')) {
+        try {
+          const parsed = JSON.parse(event.context || event.msg || '{}');
+          if (parsed.topology && parsed.steps) return parsed;
+        } catch { /* continue searching */ }
+      }
+    }
+  }
+
+  for (const task of tasks) {
+    const meta = (task as any)._conductor_plan || (task as any).conductor_plan;
+    if (meta?.topology) return meta;
+  }
+
+  return null;
+}
+
+function extractSynapseAssessment(tasks: Task[]): SynapseAssessmentMeta | null {
+  for (const task of tasks) {
+    if (!task.events) continue;
+    for (const event of task.events) {
+      if (event.type === 'synapse_assessment' || event.msg?.includes('_synapse_assessment')) {
+        try {
+          const parsed = JSON.parse(event.context || event.msg || '{}');
+          if (parsed.paradigm) return parsed;
+        } catch { /* continue */ }
+      }
+    }
+  }
+
+  for (const task of tasks) {
+    const meta = (task as any)._synapse_assessment || (task as any).synapse_assessment;
+    if (meta?.paradigm) return meta;
+  }
+
+  return null;
+}
+
+function mapFromConductorPlan(
+  rawAgents: DashboardData['agents'],
+  plan: ConductorPlanMeta,
+  synapse: SynapseAssessmentMeta | null,
+): Agent[] {
+  const totalStages = plan.steps.length;
+
+  return plan.steps.map((step, idx) => {
+    const matchedAgent = rawAgents.find((a) => a.task_id && a.status === 'RUNNING');
+    const role = inferAgentRole(step.agent_role);
+    const status = inferStepStatus(idx, rawAgents, totalStages);
+
+    return {
+      id: matchedAgent?.instance_id || `conductor-step-${idx}`,
+      name: formatAgentName(step.agent_role),
+      role,
+      status,
+      subtask: step.subtask,
+      lastMessage: step.subtask,
+      modelTier: step.model_tier,
+      stageIndex: step.step_index + 1,
+      totalStages,
+      topology: plan.topology,
+      paradigm: synapse?.paradigm,
+      designQuality: synapse?.design_quality_score,
+      progress: status === 'complete' ? 100 : status === 'working' ? 60 : 0,
+      durationSeconds: 0,
+    };
+  });
+}
+
+function mapFromTaskEvents(data: DashboardData): Agent[] {
+  const { tasks, agents } = data;
+  const agentMap = new Map<string, { role: AgentRole; status: AgentStatus; subtask: string; lastTs: string }>();
+
+  const recentTasks = [...tasks]
+    .filter((t) => t.events?.length > 0)
+    .sort((a, b) => (b.events?.[b.events.length - 1]?.ts || '').localeCompare(a.events?.[a.events.length - 1]?.ts || ''))
+    .slice(0, 5);
+
+  for (const task of recentTasks) {
+    if (!task.events) continue;
+    for (const event of task.events) {
+      const phase = event.phase;
+      if (!phase || phase === 'intake' || phase === 'workspace') continue;
+
+      const existing = agentMap.get(phase);
+      if (!existing || (event.ts || '') > existing.lastTs) {
+        agentMap.set(phase, {
+          role: inferAgentRole(phase),
+          status: task.status === 'running' || task.status === 'IN_PROGRESS' ? 'working' : 'complete',
+          subtask: event.msg || '',
+          lastTs: event.ts || '',
+        });
+      }
+    }
+  }
+
+  if (agentMap.size > 0) {
+    return Array.from(agentMap.entries()).map(([name, info]) => ({
+      id: name,
+      name: formatAgentName(name),
+      role: info.role,
+      status: info.status,
+      lastMessage: info.subtask || undefined,
+      subtask: info.subtask || undefined,
+      modelTier: inferModelTier(name),
+      progress: info.status === 'complete' ? 100 : 50,
+    }));
+  }
+
+  // Final fallback: raw ECS agents with better formatting
+  return agents.slice(0, 10).map((a: any) => ({
+    id: a.instance_id,
+    name: a.name || 'fde-pipeline',
+    role: 'coder' as const,
+    status: a.status === 'RUNNING' ? 'working' as const :
+            a.status === 'COMPLETED' ? 'complete' as const : 'idle' as const,
+    lastMessage: a.task_id ? `Task: ${a.task_id.slice(-8)}` : undefined,
+    progress: a.status === 'RUNNING' ? 50 : a.status === 'COMPLETED' ? 100 : 0,
+  }));
+}
+
+function inferAgentRole(agentName: string): AgentRole {
+  const name = agentName.toLowerCase();
+  if (name.includes('tech-lead') || name.includes('intake') || name.includes('planner')) return 'planner';
+  if (name.includes('architect')) return 'architect';
+  if (name.includes('adversarial') || name.includes('redteam') || name.includes('security')) return 'adversarial';
+  if (name.includes('fidelity') || name.includes('quality')) return 'fidelity';
+  if (name.includes('reviewer')) return 'reviewer';
+  if (name.includes('reporting') || name.includes('writer') || name.includes('commiter')) return 'reporting';
+  if (name.includes('developer') || name.includes('swe') || name.includes('code')) return 'coder';
+  return 'coder';
+}
+
+function formatAgentName(rawRole: string): string {
+  return rawRole
+    .replace(/-agent$/, '')
+    .replace(/^(swe|fde)-/, (_, prefix) => prefix.toUpperCase() + ' ')
+    .split('-')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+    .trim();
+}
+
+function inferStepStatus(
+  stepIndex: number,
+  rawAgents: DashboardData['agents'],
+  totalSteps: number,
+): AgentStatus {
+  const runningCount = rawAgents.filter((a) => a.status === 'RUNNING').length;
+  const completedCount = rawAgents.filter((a) => a.status === 'COMPLETED').length;
+
+  if (runningCount === 0 && completedCount >= totalSteps) return 'complete';
+  if (stepIndex < completedCount) return 'complete';
+  if (stepIndex === completedCount && runningCount > 0) return 'working';
+  return 'idle';
+}

@@ -84,18 +84,10 @@ export default function App() {
         const data = await res.json();
         setFactoryData(data);
 
-        // Hydrate agents from API data
+        // Hydrate agents from API data — use Conductor plan for rich identity
         if (data.agents && data.agents.length > 0) {
-          const realAgents: Agent[] = data.agents.slice(0, 10).map((a: any) => ({
-            id: a.instance_id,
-            name: a.name || 'fde-pipeline',
-            role: 'coder' as const,
-            status: a.status === 'RUNNING' ? 'working' :
-                    a.status === 'COMPLETED' ? 'complete' :
-                    a.status === 'CREATED' ? 'idle' : 'idle',
-            lastMessage: a.task_id ? `Task: ${a.task_id}` : undefined,
-            progress: a.status === 'RUNNING' ? 50 : a.status === 'COMPLETED' ? 100 : 0,
-          }));
+          const { mapAgentsWithConductorPlan } = await import('./mappers/factoryDataMapper');
+          const realAgents = mapAgentsWithConductorPlan(data);
           setAgents(realAgents);
         }
 

@@ -1,4 +1,4 @@
-export type AgentRole = 'planner' | 'coder' | 'reviewer' | 'deployer';
+export type AgentRole = 'planner' | 'coder' | 'reviewer' | 'deployer' | 'architect' | 'adversarial' | 'fidelity' | 'tech-lead' | 'reporting';
 
 export type AgentStatus = 'idle' | 'intake' | 'provisioning' | 'setup' | 'thinking' | 'working' | 'complete' | 'error';
 
@@ -11,6 +11,14 @@ export interface Agent {
   progress?: number; 
   cpuUsage?: number;
   memoryUsage?: number;
+  subtask?: string;
+  modelTier?: string;
+  stageIndex?: number;
+  totalStages?: number;
+  topology?: string;
+  paradigm?: string;
+  designQuality?: number;
+  durationSeconds?: number;
 }
 
 export interface LogEntry {
