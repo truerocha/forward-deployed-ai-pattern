@@ -21,12 +21,14 @@ from boto3.dynamodb.conditions import Attr, Key
 TASK_QUEUE_TABLE = os.environ.get("TASK_QUEUE_TABLE", "fde-dev-task-queue")
 AGENT_LIFECYCLE_TABLE = os.environ.get("AGENT_LIFECYCLE_TABLE", "fde-dev-agent-lifecycle")
 DORA_METRICS_TABLE = os.environ.get("DORA_METRICS_TABLE", "fde-dev-dora-metrics")
+METRICS_TABLE = os.environ.get("METRICS_TABLE", "fde-dev-metrics")
 REGION = os.environ.get("AWS_REGION_NAME", os.environ.get("AWS_REGION", "us-east-1"))
 
 dynamodb = boto3.resource("dynamodb", region_name=REGION)
 task_table = dynamodb.Table(TASK_QUEUE_TABLE)
 lifecycle_table = dynamodb.Table(AGENT_LIFECYCLE_TABLE)
 dora_table = dynamodb.Table(DORA_METRICS_TABLE)
+metrics_table = dynamodb.Table(METRICS_TABLE)
 
 # Pipeline stages in execution order (for progress visualization)
 # Classic mode uses: ingested → workspace → reconnaissance → engineering → review → completion
@@ -51,13 +53,15 @@ PIPELINE_STAGES = [
 
 
 def handler(event, context):
-    """Lambda handler — routes to /status/tasks, /status/tasks/{id}/reasoning, or /status/health."""
+    """Lambda handler — routes to /status/tasks, /status/tasks/{id}/reasoning, /status/metrics, or /status/health."""
     path = event.get("rawPath", event.get("path", "/status/tasks"))
 
     if "/status/health" in path:
         return _handle_health(event, context)
     if "/status/registries" in path:
         return _handle_registries(event, context)
+    if "/status/metrics" in path:
+        return _handle_metrics(event, context)
     if "/reasoning" in path:
         return _handle_reasoning(event, context)
     return _handle_tasks(event, context)
@@ -113,6 +117,91 @@ def _handle_reasoning(event, context):
 
     except Exception as e:
         return _response(500, {"error": "Internal server error"})
+
+
+def _handle_metrics(event, context):
+    """GET /status/metrics — Architect-view metrics from the unified metrics table.
+
+    Queries the fde-dev-metrics DynamoDB table with prefix scans for:
+      - brain_sim: Fidelity scores, emulation classification, organism distribution
+      - conductor: Topology usage, step counts, recursion depth
+      - synapse: Paradigm distribution, design quality trend, coherence violations
+      - vsm: Value stream mapping (lead time by stage)
+      - friction: Net friction scores
+      - perturbation: Robustness testing results
+
+    Each section is optional — if no data exists for a prefix, that section
+    returns null (portal renders appropriate empty state).
+
+    Supports ?project_id= query parameter for project filtering.
+    """
+    try:
+        params = event.get("queryStringParameters") or {}
+        project_id = params.get("project_id", "global")
+        limit = int(params.get("limit", "20"))
+
+        body = {
+            "project_id": project_id,
+            "brain_sim": _query_metrics_section(project_id, "brain_sim#", limit),
+            "fidelity": _query_metrics_section(project_id, "fidelity#", limit),
+            "emulation": _query_metrics_section(project_id, "emulation#", limit),
+            "conductor": _query_metrics_section(project_id, "conductor#", limit),
+            "synapse": _query_metrics_section(project_id, "synapse#", limit),
+            "perturbation": _query_metrics_section(project_id, "perturbation#", limit),
+            "vsm": _query_metrics_section(project_id, "vsm#", limit),
+            "friction": _query_metrics_section(project_id, "friction#", limit),
+            "maturity": _query_metrics_section(project_id, "maturity#", limit),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+        return _response(200, body)
+
+    except Exception as e:
+        return _response(500, {"error": "Internal server error"})
+
+
+def _query_metrics_section(project_id: str, prefix: str, limit: int) -> dict | None:
+    """Query a metrics section from the unified metrics table.
+
+    Returns the most recent items for the given prefix, or None if
+    no data exists (triggers empty state in portal).
+    """
+    try:
+        response = metrics_table.query(
+            KeyConditionExpression=Key("project_id").eq(project_id) & Key("metric_key").begins_with(prefix),
+            ScanIndexForward=False,
+            Limit=limit,
+        )
+        items = response.get("Items", [])
+        if not items:
+            return None
+
+        # Parse the JSON data field from each item
+        parsed = []
+        for item in items:
+            data_raw = item.get("data", "{}")
+            try:
+                data = json.loads(data_raw) if isinstance(data_raw, str) else data_raw
+            except (json.JSONDecodeError, TypeError):
+                data = {}
+
+            parsed.append({
+                "metric_key": item.get("metric_key", ""),
+                "metric_type": item.get("metric_type", ""),
+                "task_id": item.get("task_id", ""),
+                "recorded_at": item.get("recorded_at", ""),
+                "data": data,
+            })
+
+        # Return summary + recent items
+        return {
+            "count": len(parsed),
+            "latest": parsed[0] if parsed else None,
+            "items": parsed[:limit],
+        }
+
+    except Exception:
+        return None
 
 
 def _handle_tasks(event, context):
