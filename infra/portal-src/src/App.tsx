@@ -365,7 +365,7 @@ export default function App() {
                     </div>
                     {task.stage_progress && (
                       <div className="mt-2">
-                        <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+                        <div className="h-1 bg-surface rounded-full overflow-hidden">
                           <div className="h-full bg-aws-orange rounded-full transition-all" style={{ width: `${task.stage_progress.percent || 0}%` }} />
                         </div>
                       </div>
