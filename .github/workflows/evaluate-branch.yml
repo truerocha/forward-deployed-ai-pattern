@@ -30,6 +30,22 @@ jobs:
       - name: Install evaluation dependencies
         run: pip install jsonschema pyyaml ruff
 
+      - name: Block internal agent artifacts
+        id: artifact_hygiene
+        run: |
+          PATTERNS='(TASK_ANALYSIS|HANDOFF|REFERENCE_|IMPLEMENTATION_|PHASE[0-9]_|CODE_QUALITY|REL_REVIEW|README_GH|RECONNAISSANCE|CODE_SNIPPETS|_ANALYSIS|_REPORT|_SUMMARY|_BRIEF|_COMPLETE|_CHECKLIST).*\.md$'
+          VIOLATIONS=$(git diff --name-only origin/main...HEAD | grep -iE "$PATTERNS" || true)
+          if [ -n "$VIOLATIONS" ]; then
+            echo "::error::Internal agent artifacts found in PR. These must not be committed:"
+            echo "$VIOLATIONS"
+            echo ""
+            echo "See: docs/internal/agent-artifact-hygiene.md"
+            echo "has_violations=true" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          echo "has_violations=false" >> $GITHUB_OUTPUT
+          echo "✓ Artifact hygiene check passed"
+
       - name: Run Branch Evaluation
         id: evaluate
         run: |

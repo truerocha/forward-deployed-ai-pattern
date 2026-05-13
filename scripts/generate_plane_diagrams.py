@@ -51,26 +51,26 @@ def generate_hero():
         direction="LR",
         graph_attr={"ranksep": "1.6", "nodesep": "0.9", "splines": "curved", "newrank": "true", "pad": "0.5"},
     ):
-        with Cluster("1. Version Source Management\nGit · ALM · Branches · Isolation", graph_attr=cl("#e8f0fe", "#1a73e8", "#1a73e8")):
+        with Cluster("1. Version Source Management\nGit · ALM · Branches · Isolation · Onboarding", graph_attr=cl("#e8f0fe", "#1a73e8", "#1a73e8")):
             vsm = Git("Source\nManagement")
 
-        with Cluster("2. Data Plane\nContract · Router · Queue · Storage", graph_attr=cl("#fef7e0", "#f9a825", "#f57f17")):
+        with Cluster("2. Data Plane\nContract · Router · Queue · Risk Scoring", graph_attr=cl("#fef7e0", "#f9a825", "#f57f17")):
             data = Dynamodb("Data\nFlow")
 
         with Cluster("3. Context Plane\nConstraints · Prompts · Scope · Learning", graph_attr=cl("#e8f5e9", "#43a047", "#2e7d32")):
             context = S3("Context\nKnowledge")
 
-        with Cluster("4. FDE Plane\nOrchestrator · Builder · Autonomy · Agents", graph_attr=cl("#fce4ec", "#e53935", "#b71c1c")):
-            fde = StepFunctions("Agent\nPipeline")
+        with Cluster("4. FDE Plane\nConductor · Squads · Distributed Execution", graph_attr=cl("#fce4ec", "#e53935", "#b71c1c")):
+            fde = StepFunctions("Agent\nOrchestration")
 
-        with Cluster("5. Control Plane\nSDLC · DORA · Safety · Failure Modes", graph_attr=cl("#fff3e0", "#ef6c00", "#e65100")):
+        with Cluster("5. Control Plane\nSDLC · DORA Forecast · Safety · Failure Modes", graph_attr=cl("#fff3e0", "#ef6c00", "#e65100")):
             control = Quicksight("Governance\nMetrics")
 
         vsm >> Edge(label="1. Tasks", color="#1a73e8", style="bold", weight="10") >> data
-        data >> Edge(label="2. Contract", color="#f9a825", style="bold", weight="10") >> context
-        context >> Edge(label="3. Prompts", color="#43a047", style="bold", weight="10") >> fde
+        data >> Edge(label="2. Contract +\nRisk Score", color="#f9a825", style="bold", weight="10") >> context
+        context >> Edge(label="3. Prompts +\nConstraints", color="#43a047", style="bold", weight="10") >> fde
         fde >> Edge(label="4. Results", color="#e53935", style="bold", weight="10") >> control
-        control >> Edge(label="5. Feedback", color="#ef6c00", style="bold", weight="10") >> vsm
+        control >> Edge(label="5. Feedback +\nForecast", color="#ef6c00", style="bold", weight="10") >> vsm
 
     print("  Generated: 00-hero-overview.png")
 

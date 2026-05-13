@@ -96,6 +96,34 @@ _DEBUG_PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"\bdebugger\b"), "debugger statement"),
 ]
 
+# Patterns that indicate internal agent artifacts that must NOT be committed
+# See: docs/internal/agent-artifact-hygiene.md
+_ARTIFACT_HYGIENE_PATTERNS: list[tuple[re.Pattern, str]] = [
+    (re.compile(r"_ANALYSIS[^/]*\.md$", re.IGNORECASE), "Internal analysis artifact"),
+    (re.compile(r"_REPORT[^/]*\.md$", re.IGNORECASE), "Internal report artifact"),
+    (re.compile(r"_SUMMARY[^/]*\.md$", re.IGNORECASE), "Internal summary artifact"),
+    (re.compile(r"_BRIEF[^/]*\.md$", re.IGNORECASE), "Internal brief artifact"),
+    (re.compile(r"_COMPLETE[^/]*\.md$", re.IGNORECASE), "Internal completion marker"),
+    (re.compile(r"^PHASE\d+_.*\.md$", re.IGNORECASE), "Internal phase artifact"),
+    (re.compile(r"^HANDOFF.*\.md$", re.IGNORECASE), "Internal handoff artifact"),
+    (re.compile(r"_CHECKLIST[^/]*\.md$", re.IGNORECASE), "Internal checklist artifact"),
+    (re.compile(r"^README_GH.*\.md$", re.IGNORECASE), "Internal GitHub readme artifact"),
+    (re.compile(r"^REFERENCE_.*\.md$", re.IGNORECASE), "Internal reference artifact"),
+    (re.compile(r"^CODE_SNIPPETS.*\.md$", re.IGNORECASE), "Internal code snippets artifact"),
+    (re.compile(r"^task_analysis.*\.md$", re.IGNORECASE), "Internal task analysis artifact"),
+    (re.compile(r"^handoff_summary.*\.md$", re.IGNORECASE), "Internal handoff summary"),
+    (re.compile(r"^reconnaissance.*\.md$", re.IGNORECASE), "Internal reconnaissance artifact"),
+    (re.compile(r"^CODE_QUALITY.*\.md$", re.IGNORECASE), "Internal code quality artifact"),
+    (re.compile(r"^REL_REVIEW.*\.md$", re.IGNORECASE), "Internal reliability review artifact"),
+    (re.compile(r"^IMPLEMENTATION_.*\.md$", re.IGNORECASE), "Internal implementation artifact"),
+    # WAF pillar agent review artifacts (GH-{N}-{PILLAR}-*-review.md, GL-{N}-*, ASANA-{N}-*)
+    (re.compile(r"^GH-\d+.*review.*\.md$", re.IGNORECASE), "WAF pillar review artifact (GitHub issue)"),
+    (re.compile(r"^GL-\d+.*review.*\.md$", re.IGNORECASE), "WAF pillar review artifact (GitLab issue)"),
+    (re.compile(r"^ASANA-\d+.*review.*\.md$", re.IGNORECASE), "WAF pillar review artifact (Asana task)"),
+    # Generic pillar review artifacts in any subdirectory
+    (re.compile(r"(?:reliability|security|operational|performance|cost|sustainability)-review.*\.md$", re.IGNORECASE), "WAF pillar review artifact"),
+]
+
 # Maximum file size for a single file change (lines added)
 _MAX_FILE_LINES = 500
 _MAX_TOTAL_LINES = 2000
@@ -195,6 +223,19 @@ def review_diff(workspace_dir: str, base_branch: str = "main") -> DiffReviewResu
                     severity="error", category="secrets",
                     file=fname, line=0,
                     message=f"Sensitive file committed: {fname}",
+                ))
+
+    # Check for internal agent artifacts (artifact hygiene)
+    # See: docs/internal/agent-artifact-hygiene.md
+    for fname in file_added_lines:
+        basename = os.path.basename(fname)
+        for pattern, description in _ARTIFACT_HYGIENE_PATTERNS:
+            if pattern.search(basename):
+                findings.append(DiffFinding(
+                    severity="error", category="artifact_hygiene",
+                    file=fname, line=0,
+                    message=f"Agent artifact hygiene violation: {description} — '{fname}' must not be committed. "
+                            "Move to /tmp/agent-artifacts-{{task-id}}/ before staging.",
                 ))
 
     # Check for excessively large changes

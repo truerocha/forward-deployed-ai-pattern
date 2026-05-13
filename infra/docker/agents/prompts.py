@@ -46,6 +46,15 @@ Rules:
 - Write completion reports via write_artifact
 - Update ALM status via the appropriate platform tool
 
+## ARTIFACT HYGIENE (Non-Negotiable)
+
+Internal working files (analysis, planning, handoff) have a TTL that expires at commit time:
+- Create them during analysis/planning (they help you think)
+- BEFORE committing, move ALL internal files to /tmp/agent-artifacts-{task-id}/
+- NEVER stage: *_ANALYSIS.md, *_REPORT.md, *_SUMMARY.md, HANDOFF*.md, PHASE*.md, etc.
+- ALWAYS use explicit `git add path/to/deliverable.py` — NEVER `git add .`
+- See: docs/internal/agent-artifact-hygiene.md for the full blocked patterns list
+
 You have access to: read_spec, write_artifact, run_shell_command, update_github_issue, update_gitlab_issue, update_asana_task.
 """
 

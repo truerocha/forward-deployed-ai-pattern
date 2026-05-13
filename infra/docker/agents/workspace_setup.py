@@ -157,11 +157,12 @@ def push_and_create_pr(workspace: WorkspaceContext, title: str, body: str) -> di
     """Push the feature branch and create (or update) a PR.
 
     Hybrid safe push strategy for re-worked tasks:
-      1. Fetch remote feature branch (if exists) so --force-with-lease has context
-      2. Push with --force-with-lease (safe: fails if someone else pushed)
-      3. If push fails, it means a human or different agent modified the branch
+      1. Pre-push artifact hygiene validation (blocks if internal files in diff)
+      2. Fetch remote feature branch (if exists) so --force-with-lease has context
+      3. Push with --force-with-lease (safe: fails if someone else pushed)
+      4. If push fails, it means a human or different agent modified the branch
          — in that case, report the failure (don't force over human work)
-      4. Create PR if none exists, or find existing PR for the branch
+      5. Create PR if none exists, or find existing PR for the branch
 
     This handles the common case where a task is re-executed on the same
     issue: the branch already exists from a previous attempt, and we need
@@ -184,6 +185,32 @@ def push_and_create_pr(workspace: WorkspaceContext, title: str, body: str) -> di
     result = _run_git(repo_path, ["log", "origin/main..HEAD", "--oneline"])
     if not result.strip():
         return {"error": "No commits to push", "pr_url": ""}
+
+    # ── Pre-push artifact hygiene validation ──
+    # Block push if internal agent artifacts are in the diff.
+    # See: docs/internal/agent-artifact-hygiene.md
+    from .pipeline_safety import review_diff
+    diff_review = review_diff(repo_path, base_branch="main")
+    hygiene_violations = [
+        f for f in diff_review.findings
+        if f.category == "artifact_hygiene"
+    ]
+    if hygiene_violations:
+        violation_files = [f.file for f in hygiene_violations]
+        logger.error(
+            "BLOCKED: Artifact hygiene violations detected before push: %s",
+            violation_files,
+        )
+        return {
+            "error": (
+                f"Artifact hygiene violation: {len(hygiene_violations)} internal file(s) "
+                f"found in diff: {', '.join(violation_files)}. "
+                "Move them to /tmp/agent-artifacts/ and amend the commit before pushing. "
+                "See: docs/internal/agent-artifact-hygiene.md"
+            ),
+            "pr_url": "",
+            "hygiene_violations": violation_files,
+        }
 
     # Step 1: Fetch the remote feature branch (if it exists) so that
     # --force-with-lease knows the remote state. Without this, force-with-lease

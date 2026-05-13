@@ -702,7 +702,27 @@ class Orchestrator:
                         "status": "error",
                         "error": str(e),
                     })
-                    # Don't break — try remaining agents (graceful degradation)
+                    # Critical agents: if delivery fails, don't continue to reporting
+                    # (reporting without delivery creates misleading ALM status updates)
+                    _CRITICAL_AGENTS = {"swe-dtl-commiter-agent", "swe-developer-agent"}
+                    if agent_role in _CRITICAL_AGENTS:
+                        logger.error(
+                            "Critical agent %s failed — halting pipeline (no graceful degradation for delivery/implementation)",
+                            agent_role,
+                        )
+                        task_queue.append_task_event(
+                            task_id, "reasoning",
+                            f"⛔ Pipeline halted: critical agent '{agent_role}' failed",
+                            phase=agent_role,
+                            criteria="Critical agent failure — downstream agents skipped",
+                            context=(
+                                "The DTL committer and developer agents are critical. "
+                                "If they fail, reporting would produce misleading status. "
+                                "Pipeline halted to prevent false-positive ALM updates."
+                            ),
+                        )
+                        break
+                    # Non-critical: try remaining agents (graceful degradation)
                     continue
 
         all_completed = all(r["status"] == "completed" for r in results)

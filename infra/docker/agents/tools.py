@@ -244,6 +244,64 @@ def run_shell_command(command: str, working_dir: str = "") -> str:
         if pattern.lower() in cmd_lower:
             return f"BLOCKED: FDE delivery rule violation — '{reason}'. Agent must work on feature branches only."
 
+    # ── Artifact Hygiene: Block bulk staging and forbidden commit patterns ──
+    # See: docs/internal/agent-artifact-hygiene.md
+    _hygiene_blocked = [
+        ("git add .", "bulk_stage_dot"),
+        ("git add -a", "bulk_stage_all_flag"),
+        ("git add --all", "bulk_stage_all"),
+        ("git add *", "bulk_stage_glob"),
+        ("git commit -a", "commit_auto_stage"),
+        ("git commit --all", "commit_auto_stage"),
+    ]
+    for pattern, reason in _hygiene_blocked:
+        if pattern.lower() in cmd_lower:
+            return (
+                f"BLOCKED: Artifact hygiene violation — '{reason}'. "
+                "You MUST stage files explicitly: git add path/to/file1 path/to/file2. "
+                "Never use 'git add .', 'git add -A', 'git add *', or 'git commit -a'. "
+                "See: docs/internal/agent-artifact-hygiene.md"
+            )
+
+    # ── Artifact Hygiene: Block staging of internal working files ──
+    if "git add" in cmd_lower:
+        import re as _re
+        _blocked_file_patterns = [
+            r"(?:^|\s)[\w/]*_ANALYSIS[\w]*\.md",
+            r"(?:^|\s)[\w/]*_REPORT[\w]*\.md",
+            r"(?:^|\s)[\w/]*_SUMMARY[\w]*\.md",
+            r"(?:^|\s)[\w/]*_BRIEF[\w]*\.md",
+            r"(?:^|\s)[\w/]*_COMPLETE[\w]*\.md",
+            r"(?:^|\s)PHASE\d+_[\w]*\.md",
+            r"(?:^|\s)HANDOFF[\w]*\.md",
+            r"(?:^|\s)[\w/]*_CHECKLIST[\w]*\.md",
+            r"(?:^|\s)README_GH[\w]*\.md",
+            r"(?:^|\s)REFERENCE_[\w]*\.md",
+            r"(?:^|\s)CODE_SNIPPETS[\w]*\.md",
+            r"(?:^|\s)task_analysis[\w]*\.md",
+            r"(?:^|\s)handoff_summary[\w]*\.md",
+            r"(?:^|\s)reconnaissance[\w]*\.md",
+            r"(?:^|\s)CODE_QUALITY[\w]*\.md",
+            r"(?:^|\s)REL_REVIEW[\w]*\.md",
+            r"(?:^|\s)IMPLEMENTATION_[\w]*\.md",
+            # WAF pillar agent review artifacts (GH-{N}-{PILLAR}-*-review.md)
+            r"(?:^|\s)[\w/]*GH-\d+[\w-]*review[\w-]*\.md",
+            r"(?:^|\s)[\w/]*GL-\d+[\w-]*review[\w-]*\.md",
+            r"(?:^|\s)[\w/]*ASANA-\d+[\w-]*review[\w-]*\.md",
+            # Generic review artifacts from pillar agents
+            r"(?:^|\s)[\w/]*-(?:reliability|security|operational|performance|cost|sustainability)-review[\w-]*\.md",
+        ]
+        for pat in _blocked_file_patterns:
+            match = _re.search(pat, command, _re.IGNORECASE)
+            if match:
+                blocked_file = match.group().strip()
+                return (
+                    f"BLOCKED: Artifact hygiene violation — staging internal file '{blocked_file}'. "
+                    "Internal working files (analysis, handoff, reports) must NOT be committed. "
+                    "Move them to /tmp/agent-artifacts-{{task-id}}/ before staging. "
+                    "See: docs/internal/agent-artifact-hygiene.md"
+                )
+
     os.makedirs(working_dir, exist_ok=True)
     try:
         result = subprocess.run(
