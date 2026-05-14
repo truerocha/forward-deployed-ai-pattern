@@ -20,20 +20,20 @@
 }
 
 [data-theme="light"] {
-  --bg-main: #f1f5f9;
+  --bg-main: #f8fafc;
   --bg-card: #ffffff;
-  --bg-surface: rgba(15, 23, 42, 0.04);
+  --bg-surface: rgba(15, 23, 42, 0.05);
   --text-main: #0f172a;
-  --text-secondary: #475569;
-  --text-tertiary: #64748b;
-  --border-color: rgba(15, 23, 42, 0.12);
-  --border-card: rgba(15, 23, 42, 0.08);
-  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08), 0 4px 12px rgba(0, 0, 0, 0.04);
-  --accent-bg: rgba(255, 153, 0, 0.06);
-  --accent-border: rgba(255, 153, 0, 0.4);
-  --surface-hover: rgba(15, 23, 42, 0.04);
-  --surface-active: rgba(15, 23, 42, 0.08);
-  --badge-bg: rgba(15, 23, 42, 0.05);
+  --text-secondary: #334155;
+  --text-tertiary: #475569;
+  --border-color: rgba(15, 23, 42, 0.18);
+  --border-card: rgba(15, 23, 42, 0.12);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.1), 0 4px 12px rgba(0, 0, 0, 0.06);
+  --accent-bg: rgba(255, 153, 0, 0.08);
+  --accent-border: rgba(255, 153, 0, 0.5);
+  --surface-hover: rgba(15, 23, 42, 0.06);
+  --surface-active: rgba(15, 23, 42, 0.10);
+  --badge-bg: rgba(15, 23, 42, 0.07);
 }
 
 /* Light mode structural overrides */
@@ -42,7 +42,7 @@
 }
 
 [data-theme="light"] .rail-icon {
-  color: #475569;
+  color: #334155;
 }
 
 [data-theme="light"] .rail-label {
