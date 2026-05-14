@@ -182,6 +182,39 @@ def main():
         "LLM+rules" if llm_fn else "rules-only",
     )
 
+    # ─── Cognitive Autonomy (ADR-029): Compute BEFORE orchestrator runs ────
+    # The factory owns the autonomy decision. Customer repo reads AUTONOMY_LEVEL
+    # from env — we set it here so no customer code changes are needed.
+    try:
+        from src.core.orchestration.cognitive_autonomy import compute_cognitive_autonomy
+        _repo = os.environ.get("EVENT_REPO", "")
+        _deps = int(os.environ.get("TASK_DEPENDENCY_COUNT", "0") or "0")
+        _blocks = int(os.environ.get("TASK_BLOCKING_COUNT", "0") or "0")
+
+        cognitive = compute_cognitive_autonomy(
+            risk_score=0.0,  # Risk Engine not available in monolith cold path
+            dependency_count=_deps,
+            blocking_count=_blocks,
+            icrl_failure_count=0,
+            cfr_current=0.0,
+            trust_score=50.0,
+        )
+
+        # Inject into environment — customer orchestrator reads these
+        os.environ["AUTONOMY_LEVEL"] = f"L{cognitive.legacy_autonomy_level}"
+        os.environ["COGNITIVE_DEPTH"] = str(round(cognitive.capability.depth, 2))
+        os.environ["COGNITIVE_SQUAD_SIZE"] = str(cognitive.capability.squad_size)
+        os.environ["COGNITIVE_MODEL_TIER"] = cognitive.capability.model_tier
+        os.environ["COGNITIVE_AUTHORITY"] = cognitive.authority.authority_level
+
+        logger.info(
+            "Cognitive autonomy: depth=%.2f squad=%d authority=%s level=%s",
+            cognitive.capability.depth, cognitive.capability.squad_size,
+            cognitive.authority.authority_level, os.environ["AUTONOMY_LEVEL"],
+        )
+    except Exception as e:
+        logger.debug("Cognitive autonomy unavailable (using defaults): %s", str(e)[:100])
+
     eventbridge_event = os.environ.get("EVENTBRIDGE_EVENT", "")
     task_spec_path = os.environ.get("TASK_SPEC", "")
 
