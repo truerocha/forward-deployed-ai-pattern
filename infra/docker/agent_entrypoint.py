@@ -142,12 +142,99 @@ def validate_environment() -> list[str]:
     return issues
 
 
+def _should_defer_to_orchestrator() -> bool:
+    """Check if the cognitive router already dispatched this task to the orchestrator.
+
+    Dual-path architecture (ADR-030):
+      - The webhook_ingest Lambda writes task_queue with status=DISPATCHED
+        when it routes a task to the distributed orchestrator (depth >= 0.5).
+      - This monolith container ALWAYS starts from the original EventBridge rule.
+      - If the task is DISPATCHED, the orchestrator is handling it — exit cleanly.
+      - If the task is READY, either:
+        a) Lambda decided monolith should handle it (depth < 0.5)
+        b) Lambda failed — we are the fallback
+      - In both cases, proceed with execution.
+
+    Lookup strategy:
+      We identify the task by EVENT_REPO + EVENT_ISSUE_NUMBER (same key the Lambda uses).
+      Query the task_queue table for matching issue_id with status=DISPATCHED.
+      If found AND target_mode=distributed → defer.
+      If found AND target_mode=monolith → proceed (we ARE the target).
+
+    Timeout: 2s max. If DynamoDB is unreachable, proceed (safe fallback).
+    """
+    task_queue_table = os.environ.get("TASK_QUEUE_TABLE", "")
+    event_repo = os.environ.get("EVENT_REPO", "")
+    event_issue_number = os.environ.get("EVENT_ISSUE_NUMBER", "")
+
+    # Can't check without identifiers — proceed with execution
+    if not task_queue_table or not event_repo or not event_issue_number:
+        logger.debug("Dual-path check skipped: missing TASK_QUEUE_TABLE, EVENT_REPO, or EVENT_ISSUE_NUMBER")
+        return False
+
+    issue_id = f"{event_repo}#{event_issue_number}"
+
+    try:
+        from botocore.config import Config
+        fast_config = Config(connect_timeout=2, read_timeout=2, retries={"max_attempts": 1})
+        dynamodb_check = boto3.resource("dynamodb", region_name=AWS_REGION, config=fast_config)
+        table = dynamodb_check.Table(task_queue_table)
+
+        # Scan for this issue_id with DISPATCHED status
+        response = table.scan(
+            FilterExpression="issue_id = :iid AND #s = :status",
+            ExpressionAttributeNames={"#s": "status"},
+            ExpressionAttributeValues={
+                ":iid": issue_id,
+                ":status": "DISPATCHED",
+            },
+            Limit=3,
+        )
+
+        items = response.get("Items", [])
+        if not items:
+            logger.info("Dual-path check: no DISPATCHED task for %s — proceeding as monolith", issue_id)
+            return False
+
+        # Check target_mode: only defer if routed to distributed
+        for item in items:
+            target_mode = item.get("target_mode", "monolith")
+            if target_mode == "distributed":
+                logger.info(
+                    "Dual-path check: task %s for %s is DISPATCHED to distributed (depth=%s) — deferring",
+                    item.get("task_id", "?"), issue_id, item.get("depth", "?"),
+                )
+                return True
+
+        # target_mode=monolith means Lambda decided WE should handle it
+        logger.info("Dual-path check: task for %s is DISPATCHED to monolith — proceeding", issue_id)
+        return False
+
+    except Exception as e:
+        # Safe fallback: if we can't check, proceed with execution
+        logger.warning("Dual-path check failed (proceeding as fallback): %s", str(e)[:200])
+        return False
+
+
 def main():
     logger.info("FDE Strands Agent starting...")
     logger.info("Region: %s | Model: %s | Bucket: %s | Env: %s", AWS_REGION, BEDROCK_MODEL_ID, FACTORY_BUCKET, ENVIRONMENT)
 
     # Initialize OTEL distributed tracing (no-op if not configured)
     _init_telemetry()
+
+    # ─── Dual-Path Check (ADR-030): Defer to orchestrator if Lambda handled routing ──
+    # The cognitive router Lambda (webhook_ingest) sets task status to DISPATCHED
+    # when it successfully routes a task. If we see DISPATCHED, the orchestrator
+    # is handling this task via the distributed path — exit cleanly.
+    #
+    # If status is READY, the Lambda either:
+    #   a) Decided this task should run on monolith (depth < 0.5), OR
+    #   b) Failed entirely — we are the fallback
+    # In both cases, proceed with execution.
+    if _should_defer_to_orchestrator():
+        logger.info("Task already DISPATCHED by cognitive router — deferring to orchestrator. Exiting.")
+        sys.exit(0)
 
     issues = validate_environment()
     if issues:

@@ -91,8 +91,13 @@ variable "tf_state_bucket" {
 }
 
 # ─── Execution Mode: Two-Way Door (ADR-020) ─────────────────────
+# ADR-030: This variable is now a LEGACY KILL SWITCH only.
+# The cognitive router Lambda decides routing per-task based on depth.
+# This variable no longer controls EventBridge targets (always monolith).
+# It will be removed after 7 days of stable cognitive routing.
+# See: cognitive_router_sunset.tf for automated reminder.
 variable "execution_mode" {
-  description = "Pipeline execution mode: monolith (single container) or distributed (Conductor + per-agent ECS tasks)"
+  description = "LEGACY: Pipeline execution mode. Retained as emergency kill switch during cognitive router validation. Will be removed after monitoring confirms stability."
   type        = string
   default     = "monolith"
   validation {

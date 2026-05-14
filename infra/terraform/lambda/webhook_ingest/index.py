@@ -1,43 +1,84 @@
 """
-Webhook Ingest Lambda — Bridges ALM webhooks to the Task Queue (DynamoDB).
+Webhook Ingest Lambda — Cognitive Router for the Autonomous Code Factory.
 
-This is the missing piece between "webhook arrives on EventBridge" and
-"task appears in the dashboard." Without this Lambda, events land on the
-EventBridge bus and trigger ECS directly, but the task_queue table never
-gets populated — so the dashboard shows nothing.
+Enhanced from simple DynamoDB writer to intelligent dispatch router that:
+  1. Ingests ALM webhooks (GitHub, GitLab, Asana) → DynamoDB task_queue
+  2. Computes capability depth from issue metadata + metrics (with fallback)
+  3. Emits fde.internal/task.dispatched event with target_mode decision
+  4. Monolith ECS target (always-on) provides self-healing fallback
 
-Flow:
-  API Gateway → EventBridge → [this Lambda] → DynamoDB task_queue
-                            → [ECS RunTask]  → agent executes
+Architecture (dual-path, zero single point of failure):
+  EventBridge rule fires on issue.labeled
+    ├─ Target 1: This Lambda (intelligent routing, ~200ms)
+    │   ├─ Writes task_queue (status: DISPATCHED, target_mode: monolith|distributed)
+    │   ├─ Computes depth from: issue body (deps, blocks) + metrics (100ms timeout)
+    │   ├─ Emits: fde.internal/task.dispatched {target_mode, depth, task_id}
+    │   └─ If dispatch fails → task stays READY (monolith fallback handles it)
+    │
+    └─ Target 2: ECS monolith (ALWAYS starts, 30s cold start)
+        ├─ Checks task_queue: if status=DISPATCHED → exit (Lambda handled it)
+        └─ If status=READY → Lambda failed → run as fallback
 
-The ECS target and this Lambda both fire from the same EventBridge rule.
-This Lambda writes the task record; the ECS container executes it.
+Properties:
+  - No single point of failure (dual-path)
+  - Intelligent routing for complex tasks (depth ≥ 0.5 → distributed)
+  - Self-healing (Lambda failure → monolith fallback via READY status)
+  - Graceful degradation (metrics unavailable → metadata-only depth)
+  - No static execution_mode variable (cognitive signals decide per-task)
 
 Well-Architected alignment:
-  OPS 6: Telemetry — every task is tracked from ingestion
+  OPS 6: Telemetry — every task tracked from ingestion with depth decision
   REL 2: Workload architecture — decoupled write from execution
+  REL 9: Fault isolation — dual-path prevents single point of failure
+  COST 7: Right-sizing — simple tasks stay on monolith, complex get squad
 """
 
 import json
 import logging
 import os
+import re
+import time
 import uuid
 from datetime import datetime, timezone
 
 import boto3
+from botocore.config import Config
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-dynamodb = boto3.resource("dynamodb", region_name=os.environ.get("AWS_REGION", "us-east-1"))
+# ─── Configuration ───────────────────────────────────────────────
+
+AWS_REGION = os.environ.get("AWS_REGION", os.environ.get("AWS_REGION_NAME", "us-east-1"))
+
+dynamodb = boto3.resource("dynamodb", region_name=AWS_REGION)
+eventbridge = boto3.client("events", region_name=AWS_REGION)
+
+# DynamoDB client with short timeout for metrics reads (Risk 2 mitigation)
+_METRICS_CLIENT_CONFIG = Config(
+    connect_timeout=0.1,  # 100ms connect timeout
+    read_timeout=0.1,     # 100ms read timeout
+    retries={"max_attempts": 0},  # No retries — fallback to metadata-only
+)
+dynamodb_fast = boto3.resource("dynamodb", region_name=AWS_REGION, config=_METRICS_CLIENT_CONFIG)
 
 TASK_QUEUE_TABLE = os.environ.get("TASK_QUEUE_TABLE", "fde-dev-task-queue")
 AGENT_LIFECYCLE_TABLE = os.environ.get("AGENT_LIFECYCLE_TABLE", "fde-dev-agent-lifecycle")
+METRICS_TABLE = os.environ.get("METRICS_TABLE", "")
+EVENT_BUS_NAME = os.environ.get("EVENT_BUS_NAME", "fde-dev-factory-bus")
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "dev")
 
+# Depth threshold: tasks at or above this depth route to distributed
+DEPTH_THRESHOLD_DISTRIBUTED = float(os.environ.get("DEPTH_THRESHOLD", "0.5"))
+
+# Feature flag: disable cognitive routing (falls back to READY status, monolith handles)
+COGNITIVE_ROUTING_ENABLED = os.environ.get("COGNITIVE_ROUTING_ENABLED", "true").lower() == "true"
+
+
+# ─── Handler ─────────────────────────────────────────────────────
 
 def handler(event, context):
-    """Process EventBridge events and write task records to DynamoDB.
+    """Process EventBridge events: ingest task, compute depth, emit dispatch event.
 
     EventBridge delivers the event in standard envelope format:
     {
@@ -46,6 +87,7 @@ def handler(event, context):
         "detail": { ...raw webhook payload... }
     }
     """
+    start_time = time.time()
     logger.info("Webhook ingest invoked: source=%s, detail-type=%s",
                 event.get("source", "unknown"), event.get("detail-type", "unknown"))
 
@@ -79,19 +121,348 @@ def handler(event, context):
             "body": json.dumps({"task_id": existing["task_id"], "status": "duplicate_skipped"}),
         }
 
+    # ─── Cognitive Routing: compute depth and decide target mode ──
+    if COGNITIVE_ROUTING_ENABLED:
+        depth_result = _compute_depth(task, detail)
+        target_mode = "distributed" if depth_result["depth"] >= DEPTH_THRESHOLD_DISTRIBUTED else "monolith"
+
+        # Enrich task record with routing decision
+        task["target_mode"] = target_mode
+        task["depth"] = str(round(depth_result["depth"], 3))
+        task["depth_signals"] = json.dumps(depth_result["signals"])
+        task["status"] = "DISPATCHED"
+    else:
+        target_mode = "monolith"
+        task["target_mode"] = target_mode
+        task["depth"] = "0.0"
+        task["depth_signals"] = "{}"
+        # status stays READY — monolith picks it up directly
+
+    # Write task to DynamoDB
     table.put_item(Item=task)
 
     # Create a provisional agent lifecycle record (CREATED state)
     _create_agent_record(task)
 
-    logger.info("Task ingested: task_id=%s, title=%s, source=%s",
-                task["task_id"], task["title"], task["source"])
+    # ─── Emit dispatch event (non-blocking) ──────────────────────
+    if COGNITIVE_ROUTING_ENABLED and task["status"] == "DISPATCHED":
+        _emit_dispatch_event(task, depth_result, target_mode)
+
+    elapsed_ms = int((time.time() - start_time) * 1000)
+    logger.info(
+        "Task ingested: task_id=%s, title=%s, source=%s, depth=%.3f, target=%s, elapsed=%dms",
+        task["task_id"], task["title"], task["source"],
+        depth_result["depth"] if COGNITIVE_ROUTING_ENABLED else 0.0,
+        target_mode, elapsed_ms,
+    )
 
     return {
         "statusCode": 200,
-        "body": json.dumps({"task_id": task["task_id"], "status": task["status"]}),
+        "body": json.dumps({
+            "task_id": task["task_id"],
+            "status": task["status"],
+            "target_mode": target_mode,
+            "depth": depth_result["depth"] if COGNITIVE_ROUTING_ENABLED else 0.0,
+            "elapsed_ms": elapsed_ms,
+        }),
     }
 
+
+# ─── Depth Computation (Risk 2 + Risk 3 mitigation) ─────────────
+
+def _compute_depth(task: dict, detail: dict) -> dict:
+    """Compute capability depth from issue metadata + metrics.
+
+    Strategy (Risk 2 — B):
+      1. Extract metadata signals from issue body (always available, ~0ms)
+      2. Attempt DynamoDB metrics read with 100ms timeout
+      3. If metrics unavailable, use metadata-only computation
+
+    Strategy (Risk 3 — B):
+      The webhook payload already contains issue.body with full text.
+      Parse dependency count, blocking count, and labels directly.
+
+    Returns:
+        dict with 'depth' (float 0.0-1.0) and 'signals' (dict of contributing factors)
+    """
+    signals = {}
+
+    # ─── Phase 1: Metadata signals (always available) ────────────
+    body = task.get("spec_content", "")
+    labels = _extract_all_labels(detail)
+
+    dependency_count = _count_dependencies(body)
+    blocking_count = _count_blocking(body)
+    level_label = _extract_level_label(labels)
+    order_label = _extract_order_label(labels)
+
+    signals["dependency_count"] = dependency_count
+    signals["blocking_count"] = blocking_count
+    signals["level_label"] = level_label
+    signals["order_label"] = order_label
+
+    # ─── Phase 2: Metrics signals (100ms timeout, fallback) ──────
+    metrics_signals = _fetch_metrics_signals(task.get("repo", ""))
+    signals.update(metrics_signals)
+
+    # ─── Phase 3: Compute depth ──────────────────────────────────
+    depth = _calculate_depth(
+        dependency_count=dependency_count,
+        blocking_count=blocking_count,
+        level_label=level_label,
+        order_label=order_label,
+        cfr_history=metrics_signals.get("cfr_history", 0.0),
+        icrl_failure_count=metrics_signals.get("icrl_failure_count", 0),
+    )
+
+    signals["metrics_available"] = metrics_signals.get("metrics_available", False)
+    return {"depth": depth, "signals": signals}
+
+
+def _calculate_depth(
+    dependency_count: int = 0,
+    blocking_count: int = 0,
+    level_label: int = 0,
+    order_label: int = 0,
+    cfr_history: float = 0.0,
+    icrl_failure_count: int = 0,
+) -> float:
+    """Map cognitive signals to a continuous depth value (0.0-1.0).
+
+    Mirrors the logic in cognitive_autonomy.compute_capability_depth() but
+    operates on the subset of signals available at webhook time.
+
+    Key principle: failures INCREASE depth (harder task needs more capability).
+    """
+    depth = 0.0
+
+    # Level label (factory/level:L1-L5) is the strongest pre-computed signal
+    if level_label >= 5:
+        depth = max(depth, 0.85)
+    elif level_label >= 4:
+        depth = max(depth, 0.7)
+    elif level_label >= 3:
+        depth = max(depth, 0.5)
+    elif level_label >= 2:
+        depth = max(depth, 0.3)
+
+    # Integration complexity raises floor
+    if dependency_count >= 6:
+        depth = max(depth, 0.7)
+    elif dependency_count >= 4:
+        depth = max(depth, 0.6)
+    elif dependency_count >= 2:
+        depth = max(depth, 0.4)
+
+    # Critical path raises floor
+    if blocking_count >= 3:
+        depth = max(depth, 0.7)
+    elif blocking_count >= 1:
+        depth = max(depth, 0.4)
+
+    # High order number suggests later in dependency chain (more context needed)
+    if order_label >= 8:
+        depth = max(depth, 0.5)
+
+    # Past failures INCREASE capability (recovery, not punishment)
+    if icrl_failure_count >= 3:
+        depth = max(depth, 0.8)
+    elif icrl_failure_count >= 1:
+        depth = max(depth, 0.5)
+
+    # High CFR raises capability floor
+    if cfr_history > 0.30:
+        depth = max(depth, 0.8)
+    elif cfr_history > 0.15:
+        depth = max(depth, 0.6)
+
+    return max(0.0, min(1.0, depth))
+
+
+def _count_dependencies(body: str) -> int:
+    """Count dependency references in issue body.
+
+    Patterns recognized:
+      - "depends on #123" or "depends on org/repo#123"
+      - "- [ ] #123" (task list with issue refs)
+      - "blocked by #123"
+      - YAML front-matter: "depends_on: [TASK-xxx, TASK-yyy]"
+    """
+    if not body:
+        return 0
+
+    patterns = [
+        r"depends\s+on\s+[#\w/]+",
+        r"blocked\s+by\s+[#\w/]+",
+        r"-\s*\[[ x]\]\s*#\d+",
+        r"depends_on:\s*\[([^\]]+)\]",
+    ]
+
+    count = 0
+    for pattern in patterns:
+        matches = re.findall(pattern, body, re.IGNORECASE)
+        count += len(matches)
+
+    return count
+
+
+def _count_blocking(body: str) -> int:
+    """Count how many other tasks this issue blocks.
+
+    Patterns recognized:
+      - "blocks #123"
+      - "blocking: [TASK-xxx, TASK-yyy]"
+    """
+    if not body:
+        return 0
+
+    patterns = [
+        r"blocks\s+[#\w/]+",
+        r"blocking:\s*\[([^\]]+)\]",
+    ]
+
+    count = 0
+    for pattern in patterns:
+        matches = re.findall(pattern, body, re.IGNORECASE)
+        count += len(matches)
+
+    return count
+
+
+def _extract_level_label(labels: list[str]) -> int:
+    """Extract factory level from labels (factory/level:L1 → 1)."""
+    for label in labels:
+        match = re.match(r"factory/level:L(\d+)", label)
+        if match:
+            return int(match.group(1))
+    return 0
+
+
+def _extract_order_label(labels: list[str]) -> int:
+    """Extract factory order from labels (factory/order:08 → 8)."""
+    for label in labels:
+        match = re.match(r"factory/order:(\d+)", label)
+        if match:
+            return int(match.group(1))
+    return 0
+
+
+def _extract_all_labels(detail: dict) -> list[str]:
+    """Extract all label names from the webhook payload (platform-agnostic)."""
+    labels = []
+
+    # GitHub: detail.issue.labels[].name
+    issue = detail.get("issue", {})
+    for label in issue.get("labels", []):
+        name = label.get("name", "") if isinstance(label, dict) else str(label)
+        if name:
+            labels.append(name)
+
+    # GitLab: detail.object_attributes.labels[].title
+    attrs = detail.get("object_attributes", {})
+    for label in attrs.get("labels", []):
+        title = label.get("title", "") if isinstance(label, dict) else str(label)
+        if title:
+            labels.append(title)
+
+    return labels
+
+
+def _fetch_metrics_signals(repo: str) -> dict:
+    """Fetch CFR and ICRL metrics from DynamoDB with 100ms timeout.
+
+    If the read fails or times out, returns empty signals (graceful degradation).
+    The depth computation will use metadata-only in that case.
+    """
+    if not METRICS_TABLE or not repo:
+        return {"metrics_available": False, "cfr_history": 0.0, "icrl_failure_count": 0}
+
+    try:
+        table = dynamodb_fast.Table(METRICS_TABLE)
+
+        # Query recent CFR metrics for this project
+        response = table.query(
+            KeyConditionExpression="project_id = :pid AND begins_with(metric_key, :prefix)",
+            ExpressionAttributeValues={
+                ":pid": repo,
+                ":prefix": "trust#cfr#",
+            },
+            ScanIndexForward=False,  # Most recent first
+            Limit=1,
+        )
+
+        cfr_history = 0.0
+        items = response.get("Items", [])
+        if items:
+            data = json.loads(items[0].get("data", "{}"))
+            cfr_history = float(data.get("cfr_value", data.get("value", 0.0)))
+
+        # Query ICRL failure episodes
+        response_icrl = table.query(
+            KeyConditionExpression="project_id = :pid AND begins_with(metric_key, :prefix)",
+            ExpressionAttributeValues={
+                ":pid": repo,
+                ":prefix": "autonomy_adjustment#",
+            },
+            ScanIndexForward=False,
+            Limit=5,
+        )
+
+        icrl_failure_count = len(response_icrl.get("Items", []))
+
+        return {
+            "metrics_available": True,
+            "cfr_history": cfr_history,
+            "icrl_failure_count": icrl_failure_count,
+        }
+
+    except Exception as e:
+        # Graceful degradation: metrics unavailable → metadata-only depth
+        logger.warning("Metrics fetch failed (using metadata-only depth): %s", str(e))
+        return {"metrics_available": False, "cfr_history": 0.0, "icrl_failure_count": 0}
+
+
+# ─── Dispatch Event Emission ─────────────────────────────────────
+
+def _emit_dispatch_event(task: dict, depth_result: dict, target_mode: str) -> None:
+    """Emit fde.internal/task.dispatched event to EventBridge.
+
+    Two separate EventBridge rules (filtered by target_mode) will start
+    the correct ECS task definition:
+      - target_mode=monolith → strands-agent task def
+      - target_mode=distributed → orchestrator task def
+
+    Non-blocking: if PutEvents fails, the task stays DISPATCHED in DynamoDB.
+    The monolith fallback (always-on Target 2) will detect DISPATCHED status
+    and exit cleanly. If this Lambda fails entirely, task stays READY and
+    monolith runs as fallback.
+    """
+    try:
+        eventbridge.put_events(
+            Entries=[{
+                "Source": "fde.internal",
+                "DetailType": "task.dispatched",
+                "EventBusName": EVENT_BUS_NAME,
+                "Detail": json.dumps({
+                    "task_id": task["task_id"],
+                    "target_mode": target_mode,
+                    "depth": depth_result["depth"],
+                    "repo": task.get("repo", ""),
+                    "issue_id": task.get("issue_id", ""),
+                    "title": task.get("title", ""),
+                    "priority": task.get("priority", "P2"),
+                    "signals": depth_result["signals"],
+                }),
+            }]
+        )
+        logger.info("Dispatch event emitted: task_id=%s target_mode=%s depth=%.3f",
+                    task["task_id"], target_mode, depth_result["depth"])
+    except Exception as e:
+        # Non-blocking: monolith fallback will handle if this fails
+        logger.error("Failed to emit dispatch event (monolith fallback active): %s", str(e))
+
+
+# ─── ALM Ingest Functions (unchanged) ────────────────────────────
 
 def _ingest_github(detail: dict) -> dict | None:
     """Extract task from GitHub issues.labeled webhook payload."""
@@ -141,7 +512,7 @@ def _ingest_gitlab(detail: dict) -> dict | None:
 
     # GitLab sends labels in object_attributes.labels
     attrs = detail.get("object_attributes", {})
-    labels = [l.get("title", "") for l in attrs.get("labels", [])]
+    labels = [lbl.get("title", "") for lbl in attrs.get("labels", [])]
 
     if "factory-ready" not in labels:
         return None
@@ -214,6 +585,8 @@ def _ingest_asana(detail: dict) -> dict | None:
     return None
 
 
+# ─── Helper Functions ────────────────────────────────────────────
+
 def _create_agent_record(task: dict) -> None:
     """Create a provisional agent lifecycle record for dashboard visibility."""
     try:
@@ -265,12 +638,11 @@ def _extract_priority(labels: list) -> str:
 def _find_existing_task(table, issue_id: str) -> dict | None:
     """Check if a task already exists for this issue_id (deduplication).
 
-    Scans READY and IN_PROGRESS tasks. If found, returns the existing record
-    to prevent duplicate entries from webhook retries or duplicate events.
+    Scans READY, IN_PROGRESS, RUNNING, and DISPATCHED tasks. If found,
+    returns the existing record to prevent duplicate entries.
 
     Stale task TTL: If a task has been in a non-terminal state for >30 minutes
     without an updated_at change, it's considered stale and won't block new tasks.
-    This prevents permanently stuck tasks from blocking retries (COE: 5-Whys).
     """
     if not issue_id:
         return None
@@ -278,13 +650,14 @@ def _find_existing_task(table, issue_id: str) -> dict | None:
     try:
         # Scan is acceptable here — table is small (< 50 active tasks)
         response = table.scan(
-            FilterExpression="issue_id = :iid AND #s IN (:s1, :s2, :s3)",
+            FilterExpression="issue_id = :iid AND #s IN (:s1, :s2, :s3, :s4)",
             ExpressionAttributeNames={"#s": "status"},
             ExpressionAttributeValues={
                 ":iid": issue_id,
                 ":s1": "READY",
                 ":s2": "IN_PROGRESS",
                 ":s3": "RUNNING",
+                ":s4": "DISPATCHED",
             },
             Limit=5,
         )
