@@ -307,7 +307,80 @@ def main():
     else:
         logger.info("No task. Set TASK_SPEC, EVENTBRIDGE_EVENT, or EVENT_SOURCE+EVENT_ACTION.")
 
+    # ─── Metrics Emission (ADR-029): Write lifecycle metrics to DynamoDB ────
+    # The entrypoint owns metrics emission — customer orchestrator doesn't need to.
+    # This populates the portal cards (DORA, Trust, Happy Time, Cognitive Autonomy).
+    try:
+        _emit_lifecycle_metrics(
+            task_id=os.environ.get("EVENT_TASK_ID", "") or os.environ.get("EVENT_ISSUE_NUMBER", ""),
+            repo=os.environ.get("EVENT_REPO", ""),
+            cognitive_depth=os.environ.get("COGNITIVE_DEPTH", "0.5"),
+            cognitive_authority=os.environ.get("COGNITIVE_AUTHORITY", "ready_for_review"),
+            squad_size=os.environ.get("COGNITIVE_SQUAD_SIZE", "4"),
+            model_tier=os.environ.get("COGNITIVE_MODEL_TIER", "reasoning"),
+        )
+    except Exception as e:
+        logger.debug("Metrics emission failed (non-blocking): %s", str(e)[:100])
+
     logger.info("Agent execution complete.")
+
+
+def _emit_lifecycle_metrics(
+    task_id: str, repo: str, cognitive_depth: str,
+    cognitive_authority: str, squad_size: str, model_tier: str,
+) -> None:
+    """Emit lifecycle metrics to DynamoDB for portal card population."""
+    from datetime import datetime, timezone
+
+    metrics_table = os.environ.get("METRICS_TABLE", "")
+    project_id = os.environ.get("PROJECT_ID", "global")
+
+    if not metrics_table or not task_id:
+        return
+
+    try:
+        import boto3
+        dynamodb = boto3.resource("dynamodb", region_name=os.environ.get("AWS_REGION", "us-east-1"))
+        table = dynamodb.Table(metrics_table)
+        now = datetime.now(timezone.utc).isoformat()
+
+        # Cognitive Autonomy metrics (CognitiveAutonomyCard)
+        table.put_item(Item={
+            "project_id": project_id,
+            "metric_key": f"cognitive_autonomy#{task_id}#{now}",
+            "metric_type": "cognitive_autonomy",
+            "task_id": str(task_id),
+            "recorded_at": now,
+            "data": json.dumps({
+                "capability_depth": float(cognitive_depth),
+                "squad_size": int(squad_size),
+                "model_tier": model_tier,
+                "authority_level": cognitive_authority,
+                "repo": repo,
+                "task_id": str(task_id),
+            }),
+        })
+
+        # DORA deploy frequency
+        table.put_item(Item={
+            "project_id": project_id,
+            "metric_key": f"dora#deploy_frequency#L4#{now}",
+            "metric_type": "dora_deploy_frequency",
+            "task_id": str(task_id),
+            "recorded_at": now,
+            "data": json.dumps({
+                "metric": "deploy_frequency",
+                "autonomy_level": 4,
+                "value": 1.0,
+                "unit": "count",
+                "repo": repo,
+            }),
+        })
+
+        logger.info("Lifecycle metrics emitted: task=%s depth=%s authority=%s", task_id, cognitive_depth, cognitive_authority)
+
+    except Exception as e:
+        logger.warning("Failed to emit lifecycle metrics: %s", str(e)[:200])
 
 
 if __name__ == "__main__":

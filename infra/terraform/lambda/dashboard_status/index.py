@@ -152,6 +152,7 @@ def _handle_metrics(event, context):
             "friction": _query_metrics_section(project_id, "friction#", limit),
             "maturity": _query_metrics_section(project_id, "maturity#", limit),
             "review_feedback": _compute_review_feedback_metrics(project_id),
+            "cognitive_autonomy": _query_metrics_section(project_id, "cognitive_autonomy#", limit),
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
