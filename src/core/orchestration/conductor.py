@@ -510,7 +510,24 @@ class Conductor:
         ]
 
         if knowledge_context:
-            parts.append(f"Knowledge Context: {json.dumps(knowledge_context, indent=2)}")
+            # P1 (ADR-030): Extract past episodes for LLM-as-retriever injection.
+            # The Conductor sees recent outcomes and naturally identifies what's
+            # relevant when planning — no embedding infrastructure needed.
+            past_episodes = knowledge_context.pop("_past_episodes", None)
+
+            # Inject remaining knowledge context
+            if knowledge_context:
+                parts.append(f"Knowledge Context: {json.dumps(knowledge_context, indent=2)}")
+
+            # Inject past episodes as a separate section
+            if past_episodes:
+                parts.append(
+                    f"\n[PAST OUTCOMES — Learn from these. Do NOT repeat rejected approaches.]\n"
+                    f"{past_episodes}\n"
+                    f"[END PAST OUTCOMES]\n\n"
+                    f"Consider these outcomes when designing the workflow. "
+                    f"If a pattern was rejected, ensure your plan addresses the rejection reason."
+                )
 
         if previous_result:
             parts.append(

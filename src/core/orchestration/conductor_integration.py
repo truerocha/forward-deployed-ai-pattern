@@ -146,6 +146,28 @@ def generate_conductor_manifest(
     enriched_context["_synapse_paradigm"] = synapse_assessment.paradigm.paradigm.value
     enriched_context["_synapse_recommended_agents"] = recommended_agents
 
+    # P1 (ADR-030): Inject recent ICRL episodes for LLM-as-retriever.
+    # The Conductor sees past outcomes and naturally identifies what's relevant
+    # when planning the workflow — no embedding infrastructure needed.
+    try:
+        from src.core.memory.icrl_episode_store import ICRLEpisodeStore
+        import os
+        _repo = data_contract.get("repo", "") if data_contract else ""
+        if _repo:
+            _episode_store = ICRLEpisodeStore(
+                project_id=os.environ.get("PROJECT_ID", "global"),
+                metrics_table=os.environ.get("METRICS_TABLE", ""),
+            )
+            _episode_context = _episode_store.get_context_for_rework(
+                repo=_repo,
+                max_episodes=5,
+            )
+            if _episode_context:
+                enriched_context["_past_episodes"] = _episode_context
+                logger.info("Injected %d chars of ICRL episode context into Conductor", len(_episode_context))
+    except Exception as e:
+        logger.debug("ICRL episode injection failed (non-blocking): %s", str(e)[:100])
+
     # --- Conductor: Generate WorkflowPlan ---
     conductor = Conductor()
 
