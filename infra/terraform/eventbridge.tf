@@ -100,16 +100,28 @@ resource "aws_iam_role_policy" "eventbridge_ecs_run_task" {
 # ─── Targets: ECS RunTask with event passthrough ─────────────────
 
 locals {
-  # Two-way door: EXECUTION_MODE controls which task definition receives events.
-  # "monolith" → fde-dev-strands-agent (current, proven)
-  # "distributed" → fde-dev-orchestrator (new, Conductor pattern)
+  # Cognitive Router Architecture (supersedes ADR-021 two-way door):
   #
-  # Switching: change var.execution_mode in factory.tfvars and terraform apply.
-  # Rollback: set back to "monolith" and terraform apply (< 30s).
-  # Both task definitions remain deployed — only the EventBridge target changes.
+  # The webhook_ingest Lambda now computes depth per-task and emits
+  # fde.internal/task.dispatched events. The original ALM rules ALWAYS
+  # start the monolith (strands-agent) as a fallback. The cognitive_router.tf
+  # rules handle distributed dispatch when depth >= 0.5.
+  #
+  # Dual-path guarantee:
+  #   - These targets ALWAYS start strands-agent (monolith)
+  #   - The monolith checks task_queue status on startup:
+  #     - DISPATCHED → Lambda handled routing → exit cleanly
+  #     - READY → Lambda failed → monolith runs as fallback
+  #
+  # The var.execution_mode is retained for emergency override:
+  #   - "monolith" → cognitive routing disabled, all tasks go to monolith
+  #   - "distributed" → cognitive routing active (Lambda decides per-task)
+  #
+  # To fully disable cognitive routing: set COGNITIVE_ROUTING_ENABLED=false
+  # on the Lambda. All tasks will stay READY and monolith handles them.
   ecs_target_config = {
-    task_definition_arn = var.execution_mode == "distributed" ? module.ecs_distributed.orchestrator_task_definition_arn : aws_ecs_task_definition.strands_agent.arn
-    container_name      = var.execution_mode == "distributed" ? "orchestrator" : "strands-agent"
+    task_definition_arn = aws_ecs_task_definition.strands_agent.arn
+    container_name      = "strands-agent"
     subnets             = module.vpc.private_subnet_ids
     security_groups     = [module.vpc.ecs_security_group_id]
   }
@@ -136,7 +148,7 @@ locals {
   input_transformer_template = <<-TEMPLATE
     {
       "containerOverrides": [{
-        "name": "${var.execution_mode == "distributed" ? "orchestrator" : "strands-agent"}",
+        "name": "strands-agent",
         "environment": [
           {"name": "EVENT_SOURCE", "value": "<source>"},
           {"name": "EVENT_DETAIL_TYPE", "value": "<detailType>"},

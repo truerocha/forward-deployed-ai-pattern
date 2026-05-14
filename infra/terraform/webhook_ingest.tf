@@ -38,21 +38,25 @@ resource "aws_lambda_function" "webhook_ingest" {
   role             = aws_iam_role.webhook_ingest_role.arn
   handler          = "index.handler"
   runtime          = "python3.12"
-  timeout          = 15
+  timeout          = 10
   memory_size      = 128
   filename         = data.archive_file.webhook_ingest_zip.output_path
   source_code_hash = data.archive_file.webhook_ingest_zip.output_base64sha256
 
   environment {
     variables = {
-      TASK_QUEUE_TABLE      = aws_dynamodb_table.task_queue.name
-      AGENT_LIFECYCLE_TABLE = aws_dynamodb_table.agent_lifecycle.name
-      ENVIRONMENT           = var.environment
-      AWS_REGION_NAME       = var.aws_region
+      TASK_QUEUE_TABLE          = aws_dynamodb_table.task_queue.name
+      AGENT_LIFECYCLE_TABLE     = aws_dynamodb_table.agent_lifecycle.name
+      METRICS_TABLE             = module.dynamodb_distributed.metrics_table_name
+      EVENT_BUS_NAME            = aws_cloudwatch_event_bus.factory.name
+      ENVIRONMENT               = var.environment
+      AWS_REGION_NAME           = var.aws_region
+      DEPTH_THRESHOLD           = "0.5"
+      COGNITIVE_ROUTING_ENABLED = "true"
     }
   }
 
-  tags = { Component = "webhook-ingest" }
+  tags = { Component = "webhook-ingest", Architecture = "cognitive-router" }
 }
 
 resource "aws_cloudwatch_log_group" "webhook_ingest" {
@@ -86,16 +90,33 @@ resource "aws_iam_role_policy" "webhook_ingest_policy" {
     Version = "2012-10-17"
     Statement = [
       {
+        Sid    = "DynamoDBWriteTaskQueue"
         Effect = "Allow"
-        Action = ["dynamodb:PutItem", "dynamodb:UpdateItem"]
+        Action = ["dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:Scan"]
         Resource = [
           aws_dynamodb_table.task_queue.arn,
           aws_dynamodb_table.agent_lifecycle.arn,
         ]
       },
       {
+        Sid    = "DynamoDBReadMetrics"
         Effect = "Allow"
-        Action = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
+        Action = ["dynamodb:Query", "dynamodb:GetItem"]
+        Resource = [
+          module.dynamodb_distributed.metrics_table_arn,
+          "${module.dynamodb_distributed.metrics_table_arn}/index/*",
+        ]
+      },
+      {
+        Sid      = "EventBridgePutDispatchEvent"
+        Effect   = "Allow"
+        Action   = ["events:PutEvents"]
+        Resource = [aws_cloudwatch_event_bus.factory.arn]
+      },
+      {
+        Sid      = "CloudWatchLogs"
+        Effect   = "Allow"
+        Action   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
         Resource = ["arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:*"]
       }
     ]
