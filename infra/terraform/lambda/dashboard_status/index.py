@@ -234,7 +234,7 @@ def _handle_tasks(event, context):
         agent_by_task = {a.get("task_id", ""): a for a in agents if a.get("task_id")}
 
         # Compute metrics
-        active = sum(1 for i in items if i.get("status") in ("RUNNING", "PENDING", "READY", "IN_PROGRESS"))
+        active = sum(1 for i in items if i.get("status") in ("RUNNING", "PENDING", "READY", "IN_PROGRESS", "DISPATCHED"))
         completed = sum(1 for i in items if i.get("status") == "COMPLETED")
         failed = sum(1 for i in items if i.get("status") in ("FAILED", "DEAD_LETTER"))
         durations = [int(i.get("duration_ms", 0)) for i in items if i.get("duration_ms")]
@@ -773,6 +773,7 @@ def _map_status(dynamo_status: str) -> str:
     mapping = {
         "PENDING": "pending",
         "READY": "ready",
+        "DISPATCHED": "running",
         "IN_PROGRESS": "running",
         "RUNNING": "running",
         "COMPLETED": "completed",
