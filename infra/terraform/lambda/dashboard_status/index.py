@@ -299,6 +299,55 @@ def _handle_tasks(event, context):
                 "events": item.get("events", [])[-20:],  # Last 20 events for Chain of Thought
             })
 
+        # ── Issue-Centric Aggregation (ADR-030) ────────────────────────
+        # Group tasks by issue_id. Show only the PRIMARY task per issue in
+        # the rail view. Prior attempts are collapsed into attempt_count +
+        # prior_attempts summary. This prevents visual noise when multiple
+        # tasks exist for the same issue (rework loops, retries, routing bugs).
+        #
+        # Primary selection: most recent task that has progressed beyond
+        # "ingested" stage, OR simply the latest if all are at ingested.
+        tasks_by_issue = {}
+        for task in tasks:
+            issue_id = task.get("issue_url", "") or task.get("task_id", "")
+            if issue_id not in tasks_by_issue:
+                tasks_by_issue[issue_id] = []
+            tasks_by_issue[issue_id].append(task)
+
+        deduplicated_tasks = []
+        for issue_id, group in tasks_by_issue.items():
+            if len(group) == 1:
+                deduplicated_tasks.append(group[0])
+                continue
+
+            # Sort by created_at descending (newest first)
+            group.sort(key=lambda t: t.get("created_at", ""), reverse=True)
+
+            # Select primary: first task that progressed beyond ingested,
+            # or the latest if none progressed
+            primary = group[0]
+            for task in group:
+                stage_pct = task.get("stage_progress", {}).get("percent", 0)
+                if stage_pct > 7 or task.get("status") in ("running", "completed", "approved"):
+                    primary = task
+                    break
+
+            # Enrich primary with attempt metadata
+            primary["attempt_count"] = len(group)
+            primary["prior_attempts"] = [
+                {
+                    "task_id": t["task_id"],
+                    "status": t["status"],
+                    "created_at": t["created_at"],
+                    "stage_progress": t.get("stage_progress", {}).get("percent", 0),
+                }
+                for t in group if t["task_id"] != primary["task_id"]
+            ]
+            deduplicated_tasks.append(primary)
+
+        # Sort final list by created_at descending
+        deduplicated_tasks.sort(key=lambda t: t.get("created_at", ""), reverse=True)
+
         body = {
             "metrics": {
                 "active": active,
@@ -310,7 +359,7 @@ def _handle_tasks(event, context):
                 "idle_agents": idle_agents,
             },
             "dora": _compute_dora_summary(items),
-            "tasks": tasks[:20],
+            "tasks": deduplicated_tasks[:20],
             "agents": _build_agent_summary(agents),
             "projects": _extract_projects(items),
             "repo_filter": repo_filter,
@@ -909,7 +958,7 @@ def _compute_review_feedback_metrics(project_id: str) -> dict | None:
 
 
 def _response(status_code: int, body: dict) -> dict:
-    """Build API Gateway response with CORS headers."""
+    """Build API Gateway response with CORS + no-cache headers."""
     return {
         "statusCode": status_code,
         "headers": {
@@ -917,6 +966,7 @@ def _response(status_code: int, body: dict) -> dict:
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Methods": "GET, OPTIONS",
             "Access-Control-Allow-Headers": "Content-Type, Accept",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
         },
         "body": json.dumps(body, default=str),
     }
