@@ -71,14 +71,20 @@ def claim_task(task_id: str, agent_name: str) -> bool:
         table.update_item(
             Key={"task_id": task_id},
             UpdateExpression="SET #s = :new_status, assigned_agent = :agent, started_at = :now, updated_at = :now",
-            ConditionExpression="#s = :ready",
+            ConditionExpression="#s IN (:ready, :dispatched)",
             ExpressionAttributeNames={"#s": "status"},
-            ExpressionAttributeValues={":new_status": "IN_PROGRESS", ":agent": agent_name, ":ready": "READY", ":now": _now()},
+            ExpressionAttributeValues={
+                ":new_status": "IN_PROGRESS",
+                ":agent": agent_name,
+                ":ready": "READY",
+                ":dispatched": "DISPATCHED",
+                ":now": _now(),
+            },
         )
         logger.info("Task %s claimed by %s", task_id, agent_name)
         return True
     except table.meta.client.exceptions.ConditionalCheckFailedException:
-        logger.warning("Task %s already claimed", task_id)
+        logger.warning("Task %s already claimed (status not READY/DISPATCHED)", task_id)
         return False
 
 
