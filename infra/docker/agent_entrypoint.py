@@ -445,7 +445,113 @@ def main():
     except Exception as e:
         logger.debug("Metrics emission failed (non-blocking): %s", str(e)[:100])
 
+    # ─── P2 (ADR-030): Pattern Detection + Consolidation Trigger ─────────
+    # After task completion, check if failure patterns have repeated.
+    # If episode_count >= 2 for this repo, trigger auto-consolidation:
+    # compress raw episodes into a structured repo constraint.
+    try:
+        _check_pattern_consolidation(
+            repo=os.environ.get("EVENT_REPO", ""),
+            task_id=os.environ.get("EVENT_TASK_ID", "") or os.environ.get("EVENT_ISSUE_NUMBER", ""),
+        )
+    except Exception as e:
+        logger.debug("Pattern consolidation check failed (non-blocking): %s", str(e)[:100])
+
     logger.info("Agent execution complete.")
+
+
+def _check_pattern_consolidation(repo: str, task_id: str) -> None:
+    """P2 (ADR-030): Detect repeated failure patterns and auto-generate constraints.
+
+    After each task execution, checks if the repo has 2+ ICRL episodes.
+    If so, uses the existing _generate_pattern_digest() to produce a
+    consolidated constraint and writes it to the metrics table.
+
+    This is the "Anthropic Natural Language Autoencoder" pattern:
+    compress N raw episodes into a single actionable constraint that
+    the orchestrator injects at intake time (via _load_repo_constraints).
+
+    Trigger: episode_count >= 2 for the same repo
+    Output: constraint#auto_consolidated# record in metrics table
+    """
+    if not repo:
+        return
+
+    metrics_table = os.environ.get("METRICS_TABLE", "")
+    if not metrics_table:
+        return
+
+    try:
+        from src.core.memory.icrl_episode_store import ICRLEpisodeStore
+        from datetime import datetime, timezone
+
+        episode_store = ICRLEpisodeStore(
+            project_id=os.environ.get("PROJECT_ID", "global"),
+            metrics_table=metrics_table,
+        )
+
+        episode_count = episode_store.get_episode_count(repo)
+        if episode_count < 2:
+            return
+
+        # Check if we already have a consolidated constraint for this repo
+        # (avoid re-consolidating on every task)
+        ddb = boto3.resource("dynamodb", region_name=AWS_REGION)
+        table = ddb.Table(metrics_table)
+
+        existing = table.query(
+            KeyConditionExpression="project_id = :pid AND begins_with(metric_key, :prefix)",
+            ExpressionAttributeValues={
+                ":pid": repo,
+                ":prefix": "constraint#auto_consolidated#",
+            },
+            Limit=1,
+        )
+        if existing.get("Items"):
+            logger.debug("Auto-consolidated constraint already exists for %s — skipping", repo)
+            return
+
+        # Generate pattern digest from episodes
+        episodes = episode_store._query_episodes(repo)
+        if len(episodes) < 2:
+            return
+
+        # Use the existing pattern digest generator
+        digest = episode_store._generate_pattern_digest(repo, episodes)
+
+        # Write as a repo constraint (same schema as P0b)
+        now = datetime.now(timezone.utc).isoformat()
+        constraint_text = (
+            f"[AUTO-CONSOLIDATED from {len(episodes)} past failures]\n"
+            f"{digest.to_context_block()}"
+        )
+
+        table.put_item(Item={
+            "project_id": repo,
+            "metric_key": f"constraint#auto_consolidated#{now}",
+            "metric_type": "repo_constraint",
+            "task_id": task_id or "consolidation",
+            "recorded_at": now,
+            "data": json.dumps({
+                "constraint_type": "auto_consolidated",
+                "constraint_text": constraint_text[:2000],  # Cap at 2000 chars
+                "source_task": task_id,
+                "source_pr": "",
+                "reviewer": "pattern_detection_engine",
+                "classification": "auto_consolidated",
+                "active": True,
+                "episode_count": len(episodes),
+                "created_at": now,
+            }),
+        })
+
+        logger.info(
+            "Auto-consolidated constraint created for %s from %d episodes",
+            repo, len(episodes),
+        )
+
+    except Exception as e:
+        logger.warning("Pattern consolidation failed: %s", str(e)[:200])
 
 
 def _emit_lifecycle_metrics(
