@@ -119,6 +119,11 @@ def handler(event, context):
         _record_rejection_metrics(review_event, classification, task_id)
         result["actions"].append("metrics_recorded")
 
+        # P0b (ADR-030): Store rejection as repo constraint for cognitive memory.
+        # Next task on this repo will see this constraint at intake time.
+        _store_repo_constraint(review_event, classification, task_id)
+        result["actions"].append("repo_constraint_stored")
+
         # Update task_queue status to REWORK
         if task_id:
             _update_task_status(task_id, "REWORK", review_event)
@@ -344,6 +349,126 @@ def _record_rejection_metrics(review_event: dict, classification: str, task_id: 
             })
         except Exception as e:
             logger.warning("Failed to record metric %s: %s", metric["metric_type"], e)
+
+
+def _store_repo_constraint(review_event: dict, classification: str, task_id: str) -> None:
+    """Store PR rejection as a structured repo constraint in the metrics table.
+
+    P0b (ADR-030 Cognitive Memory): When a PR is rejected, the rejection
+    feedback becomes a CONSTRAINT that is injected into all future tasks
+    for the same repo. This prevents the factory from repeating the same
+    mistake (e.g., submitting PRs without running generators first).
+
+    Constraint schema:
+      project_id: repo (e.g., "truerocha/cognitive-wafr")
+      memory_key: "constraint#repo_prerequisite#{timestamp}"
+      constraint_type: "repo_prerequisite" | "ci_gate" | "review_feedback"
+      constraint_text: The actionable instruction for agents
+      source_task: Which task triggered this constraint
+      source_pr: Which PR was rejected
+      reviewer: Who rejected it
+      expires_when: Condition for automatic expiry (e.g., "issue #130 closed")
+      active: True (set to False when resolved)
+
+    The orchestrator reads these at intake time and injects them into the
+    constraint pipeline alongside task-specific constraints.
+    """
+    table = dynamodb.Table(METRICS_TABLE)
+    now = datetime.now(timezone.utc).isoformat()
+    repo = review_event.get("repo", "")
+
+    if not repo:
+        return
+
+    # Extract the actionable constraint from the review body
+    review_body = review_event.get("body", "")
+    constraint_text = _extract_constraint_from_review(review_body, classification)
+
+    if not constraint_text:
+        logger.info("No actionable constraint extracted from review — skipping storage")
+        return
+
+    try:
+        table.put_item(Item={
+            "project_id": repo,
+            "metric_key": f"constraint#repo_prerequisite#{now}",
+            "metric_type": "repo_constraint",
+            "task_id": task_id or "unknown",
+            "recorded_at": now,
+            "data": json.dumps({
+                "constraint_type": "repo_prerequisite",
+                "constraint_text": constraint_text,
+                "source_task": task_id,
+                "source_pr": f"{repo}#{review_event.get('pr_number', '')}",
+                "reviewer": review_event.get("reviewer", ""),
+                "classification": classification,
+                "active": True,
+                "created_at": now,
+            }),
+        })
+        logger.info(
+            "Repo constraint stored: repo=%s type=repo_prerequisite source_pr=#%s",
+            repo, review_event.get("pr_number", ""),
+        )
+    except Exception as e:
+        logger.warning("Failed to store repo constraint: %s", e)
+
+
+def _extract_constraint_from_review(review_body: str, classification: str) -> str:
+    """Extract actionable constraint text from a PR review body.
+
+    Looks for structured sections in the review:
+      - "### What Is Missing" → becomes the constraint
+      - "### Halting Condition" → becomes the acceptance criteria
+      - Bullet points after "must" keywords
+
+    Returns a concise constraint string for agent injection, or empty string
+    if no actionable constraint can be extracted.
+    """
+    if not review_body:
+        return ""
+
+    lines = review_body.split("\n")
+    constraint_parts = []
+    in_missing_section = False
+    in_halting_section = False
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Detect section headers
+        if "what is missing" in stripped.lower() or "must add" in stripped.lower():
+            in_missing_section = True
+            in_halting_section = False
+            continue
+        elif "halting condition" in stripped.lower():
+            in_halting_section = True
+            in_missing_section = False
+            continue
+        elif stripped.startswith("### ") or stripped.startswith("## "):
+            in_missing_section = False
+            in_halting_section = False
+            continue
+
+        # Collect content from relevant sections
+        if in_missing_section and stripped:
+            constraint_parts.append(stripped)
+        elif in_halting_section and stripped:
+            constraint_parts.append(f"[HALT] {stripped}")
+
+    if constraint_parts:
+        return "\n".join(constraint_parts[:15])  # Cap at 15 lines
+
+    # Fallback: extract lines with "must" or numbered requirements
+    must_lines = [
+        line.strip() for line in lines
+        if any(kw in line.lower() for kw in ["must", "required", "need to", "should"])
+        and len(line.strip()) > 10
+    ]
+    if must_lines:
+        return "\n".join(must_lines[:10])
+
+    return ""
 
 
 def _record_approval_metrics(review_event: dict, task_id: str) -> None:

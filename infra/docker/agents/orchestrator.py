@@ -247,6 +247,26 @@ class Orchestrator:
             extraction_result = ExtractionResult(source_field="skipped")
             dor_result = DoRValidationResult(passed=True)
 
+        # ── Step 4.1: Load Repo Constraints (ADR-030 Cognitive Memory) ──
+        # Read persistent constraints from DynamoDB (stored by review_feedback
+        # Lambda when PRs are rejected). These are injected alongside task-specific
+        # constraints so agents see past learnings for this repo.
+        repo = data_contract.get("repo", "")
+        if repo:
+            repo_constraints = self._load_repo_constraints(repo)
+            if repo_constraints:
+                extraction_result.constraints.extend(repo_constraints)
+                logger.info(
+                    "Injected %d repo constraints for %s (from past rejections)",
+                    len(repo_constraints), repo,
+                )
+                task_queue.append_task_event(
+                    task_id, "memory",
+                    f"Loaded {len(repo_constraints)} repo constraint(s) from cognitive memory",
+                    phase="intake",
+                    context=f"Constraints from past PR rejections on {repo}",
+                )
+
         # ── Step 5: DoR Gate (if gate is active) ────────────────
         if "dor_gate" in gates.outer_gates:
             plan = start_milestone(plan)
@@ -802,6 +822,73 @@ class Orchestrator:
 
         # Bugfix and documentation with no constraints/docs → fast path
         return not has_constraints and not has_related_docs
+
+    def _load_repo_constraints(self, repo: str) -> list:
+        """Load active repo constraints from DynamoDB cognitive memory.
+
+        P0c (ADR-030): Reads constraints stored by the review_feedback Lambda
+        when PRs are rejected. These represent learnings from past failures
+        that should be injected into every new task for this repo.
+
+        Query: project_id=repo, memory_key begins_with "constraint#"
+        Filter: only active constraints (data.active == True)
+
+        Returns a list of Constraint objects compatible with the extraction pipeline.
+        """
+        from .constraint_extractor import Constraint
+
+        metrics_table = os.environ.get("METRICS_TABLE", "")
+        if not metrics_table or not repo:
+            return []
+
+        try:
+            import boto3
+            from boto3.dynamodb.conditions import Key
+
+            ddb = boto3.resource("dynamodb", region_name=os.environ.get("AWS_REGION", "us-east-1"))
+            table = ddb.Table(metrics_table)
+
+            response = table.query(
+                KeyConditionExpression=Key("project_id").eq(repo) & Key("metric_key").begins_with("constraint#"),
+                ScanIndexForward=False,
+                Limit=20,
+            )
+
+            constraints = []
+            for i, item in enumerate(response.get("Items", [])):
+                data = json.loads(item.get("data", "{}"))
+
+                # Only inject active constraints
+                if not data.get("active", True):
+                    continue
+
+                constraint_text = data.get("constraint_text", "")
+                if not constraint_text:
+                    continue
+
+                source_pr = data.get("source_pr", "")
+                constraint_type = data.get("constraint_type", "repo_prerequisite")
+
+                constraints.append(Constraint(
+                    id=f"REPO-{i + 1:03d}",
+                    subject=f"repo_constraint:{constraint_type}",
+                    operator="must_satisfy",
+                    value=constraint_text,
+                    source=f"cognitive_memory (from {source_pr})",
+                    confidence=0.95,
+                ))
+
+            if constraints:
+                logger.info(
+                    "Loaded %d active repo constraints for %s from cognitive memory",
+                    len(constraints), repo,
+                )
+
+            return constraints
+
+        except Exception as e:
+            logger.warning("Failed to load repo constraints for %s: %s", repo, str(e)[:200])
+            return []
 
     @staticmethod
     def _infer_task_complexity(data_contract: dict) -> str:

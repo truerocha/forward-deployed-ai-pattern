@@ -278,12 +278,48 @@ def main():
         _deps = int(os.environ.get("TASK_DEPENDENCY_COUNT", "0") or "0")
         _blocks = int(os.environ.get("TASK_BLOCKING_COUNT", "0") or "0")
 
+        # ─── P0a (ADR-030): Read REAL ICRL failure count from episode store ──
+        # Previously hardcoded to 0. Now reads from DynamoDB to give cognitive
+        # autonomy real signals about past failures for this repo.
+        _icrl_failure_count = 0
+        _cfr_current = 0.0
+        try:
+            from src.core.memory.icrl_episode_store import ICRLEpisodeStore
+            _episode_store = ICRLEpisodeStore(
+                project_id=os.environ.get("PROJECT_ID", "global"),
+                metrics_table=os.environ.get("METRICS_TABLE", ""),
+            )
+            if _repo:
+                _icrl_failure_count = _episode_store.get_episode_count(_repo)
+                logger.info("ICRL episodes for %s: %d", _repo, _icrl_failure_count)
+        except Exception as e:
+            logger.debug("ICRL episode read failed (using 0): %s", str(e)[:100])
+
+        # Read CFR from metrics (if available)
+        try:
+            _metrics_table = os.environ.get("METRICS_TABLE", "")
+            if _metrics_table and _repo:
+                _ddb = boto3.resource("dynamodb", region_name=AWS_REGION)
+                _mt = _ddb.Table(_metrics_table)
+                _cfr_resp = _mt.query(
+                    KeyConditionExpression="project_id = :pid AND begins_with(metric_key, :prefix)",
+                    ExpressionAttributeValues={":pid": _repo, ":prefix": "trust#cfr#"},
+                    ScanIndexForward=False, Limit=1,
+                )
+                _cfr_items = _cfr_resp.get("Items", [])
+                if _cfr_items:
+                    import json as _json
+                    _cfr_data = _json.loads(_cfr_items[0].get("data", "{}"))
+                    _cfr_current = float(_cfr_data.get("cfr_value", _cfr_data.get("value", 0.0)))
+        except Exception as e:
+            logger.debug("CFR read failed (using 0.0): %s", str(e)[:100])
+
         cognitive = compute_cognitive_autonomy(
             risk_score=0.0,  # Risk Engine not available in monolith cold path
             dependency_count=_deps,
             blocking_count=_blocks,
-            icrl_failure_count=0,
-            cfr_current=0.0,
+            icrl_failure_count=_icrl_failure_count,
+            cfr_current=_cfr_current,
             trust_score=50.0,
         )
 
