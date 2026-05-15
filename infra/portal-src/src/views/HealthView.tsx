@@ -58,28 +58,58 @@ export const HealthView: React.FC<HealthViewProps> = ({ factoryData, apiStatus }
         )}
       </Container>
 
-      {/* System Health */}
+      {/* AWS Infrastructure Health — is the service up? */}
       <Container
-        header={<Header variant="h2" description="Live Infrastructure Status">Component Health</Header>}
+        header={<Header variant="h2" description="AWS service availability (Terraform-managed)">Infrastructure Health</Header>}
       >
         {apiStatus?.checks ? (
           <SpaceBetween size="s">
-            {apiStatus.checks.map((check: any, idx: number) => (
-              <div key={idx}>
-                <SpaceBetween direction="horizontal" size="xs" alignItems="center">
-                  <StatusIndicator
-                    type={check.status === 'pass' ? 'success' : check.status === 'warn' ? 'warning' : 'error'}
-                  >
-                    {check.name}
-                  </StatusIndicator>
-                  <Box variant="small" color="text-body-secondary">{check.detail}</Box>
-                </SpaceBetween>
-              </div>
-            ))}
+            {apiStatus.checks
+              .filter((check: any) => ['task_queue_table', 'agent_lifecycle_table'].includes(check.name))
+              .map((check: any, idx: number) => (
+                <div key={idx}>
+                  <SpaceBetween direction="horizontal" size="xs" alignItems="center">
+                    <StatusIndicator
+                      type={check.status === 'pass' ? 'success' : check.status === 'warn' ? 'warning' : 'error'}
+                    >
+                      {check.name}
+                    </StatusIndicator>
+                    <Box variant="small" color="text-body-secondary">{check.detail}</Box>
+                  </SpaceBetween>
+                </div>
+              ))}
           </SpaceBetween>
         ) : (
           <Box textAlign="center" color="inherit" padding="l">
             <StatusIndicator type="pending">Awaiting health data</StatusIndicator>
+          </Box>
+        )}
+      </Container>
+
+      {/* Operational Monitoring — is the system being used correctly? */}
+      <Container
+        header={<Header variant="h2" description="Runtime behavior during task execution">Operational Monitoring</Header>}
+      >
+        {apiStatus?.checks ? (
+          <SpaceBetween size="s">
+            {apiStatus.checks
+              .filter((check: any) => ['stuck_tasks', 'dead_letters', 'agent_capacity'].includes(check.name))
+              .map((check: any, idx: number) => (
+                <div key={idx}>
+                  <SpaceBetween direction="horizontal" size="xs" alignItems="center">
+                    <StatusIndicator
+                      type={check.status === 'pass' ? 'success' : check.status === 'warn' ? 'warning' : 'error'}
+                    >
+                      {check.name}
+                    </StatusIndicator>
+                    <Box variant="small" color="text-body-secondary">{check.detail}</Box>
+                  </SpaceBetween>
+                </div>
+              ))}
+          </SpaceBetween>
+        ) : (
+          <Box textAlign="center" color="inherit" padding="l">
+            <StatusIndicator type="pending">No active tasks to monitor</StatusIndicator>
           </Box>
         )}
       </Container>
