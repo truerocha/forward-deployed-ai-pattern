@@ -30,6 +30,7 @@ import { CognitiveAutonomyCard } from '../components/CognitiveAutonomyCard';
 import { QualityGateCard } from '../components/QualityGateCard';
 import { PipelineHealthCard } from '../components/PipelineHealthCard';
 import { EvidenceConfidenceCard } from '../components/EvidenceConfidenceCard';
+import { GoldenSignalsCard } from '../components/GoldenSignalsCard';
 import {
   mapDoraMetrics,
   mapCostMetrics,
@@ -48,7 +49,7 @@ interface ObservabilityViewProps {
 const PERSONA_CARDS: Record<string, string[]> = {
   PM: ['ValueStreamCard', 'CostCard', 'TrustCard', 'NetFrictionCard', 'ReviewFeedbackCard', 'CognitiveAutonomyCard'],
   SWE: ['LiveTimeline', 'GateFeedbackCard', 'SquadExecutionCard', 'BranchEvaluationCard', 'HumanInputCard', 'ConductorPlanCard', 'ReviewFeedbackCard', 'CognitiveAutonomyCard', 'QualityGateCard'],
-  SRE: ['DataQualityCard', 'GateHistoryCard', 'CostCard', 'ReviewFeedbackCard', 'CognitiveAutonomyCard', 'PipelineHealthCard'],
+  SRE: ['GoldenSignalsCard', 'DataQualityCard', 'GateHistoryCard', 'CostCard', 'ReviewFeedbackCard', 'CognitiveAutonomyCard', 'PipelineHealthCard'],
   Architect: ['MaturityRadar', 'BrainSimCard', 'ConductorPlanCard', 'ValueStreamCard', 'DataQualityCard', 'NetFrictionCard', 'EvidenceConfidenceCard'],
   Staff: ['MaturityRadar', 'TrustCard', 'CostCard', 'BrainSimCard', 'ValueStreamCard', 'SquadExecutionCard', 'ReviewFeedbackCard', 'CognitiveAutonomyCard', 'QualityGateCard', 'PipelineHealthCard', 'EvidenceConfidenceCard'],
 };
@@ -82,6 +83,7 @@ export const ObservabilityView: React.FC<ObservabilityViewProps> = ({
     QualityGateCard: <QualityGateCard />,
     PipelineHealthCard: <PipelineHealthCard />,
     EvidenceConfidenceCard: <EvidenceConfidenceCard />,
+    GoldenSignalsCard: <GoldenSignalsCard metrics={factoryData?.metrics ? { ...factoryData.metrics, dora: factoryData.dora } : null} health={null} />,
   };
 
   /** Determine if a card has data worth showing (suppress empty states) */
@@ -107,6 +109,7 @@ export const ObservabilityView: React.FC<ObservabilityViewProps> = ({
       case 'QualityGateCard': return !!(factoryData?.tasks?.some((t: any) => t.events?.some((e: any) => e.type === 'gate')));
       // Cost card always shows if there's any cost data
       case 'CostCard': return !!(mapCostMetrics(factoryData));
+      case 'GoldenSignalsCard': return !!(factoryData?.metrics && factoryData?.dora);
       default: return true;
     }
   };
