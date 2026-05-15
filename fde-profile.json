@@ -1,0 +1,20 @@
+{
+  "version": "1.0",
+  "profile": "custom",
+  "gates": {
+    "dor": true,
+    "adversarial": true,
+    "dod": true,
+    "pipeline-validation": true,
+    "branch-evaluation": true,
+    "icrl-feedback": true
+  },
+  "extensions": {
+    "multi-platform-export": true,
+    "brown-field-elevation": false,
+    "ddd-design-phase": false
+  },
+  "conductor": {
+    "auto-design-threshold": 0.5
+  }
+}
