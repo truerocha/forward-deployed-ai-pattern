@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 import boto3
+from botocore.config import Config
 
 logger = logging.getLogger("fde-onboarding.pattern_inferrer")
 
@@ -177,7 +178,13 @@ def _invoke_haiku(prompt: str, aws_region: str) -> tuple[str, int, int]:
     Returns:
         Tuple of (response_text, input_tokens, output_tokens).
     """
-    client = boto3.client("bedrock-runtime", region_name=aws_region)
+    client = boto3.client("bedrock-runtime", region_name=aws_region,
+                          config=Config(
+                              retries={"max_attempts": 5, "mode": "adaptive"},
+                              max_pool_connections=25,
+                              connect_timeout=30,
+                              read_timeout=120,
+                          ))
 
     for attempt in range(MAX_RETRIES + 1):
         try:

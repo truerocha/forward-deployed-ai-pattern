@@ -41,6 +41,7 @@ from enum import Enum
 from typing import Any
 
 import boto3
+from botocore.config import Config
 from botocore.exceptions import ClientError
 
 logger = logging.getLogger("fde.agents.pr_reviewer")
@@ -163,7 +164,13 @@ class PRReviewerAgent:
         self._region = aws_region
         self._metrics_table = metrics_table or os.environ.get("METRICS_TABLE", "")
         self._project_id = project_id or os.environ.get("PROJECT_ID", "global")
-        self._bedrock = boto3.client("bedrock-runtime", region_name=self._region)
+        self._bedrock = boto3.client("bedrock-runtime", region_name=self._region,
+                                     config=Config(
+                                         retries={"max_attempts": 5, "mode": "adaptive"},
+                                         max_pool_connections=25,
+                                         connect_timeout=30,
+                                         read_timeout=120,
+                                     ))
 
     @property
     def enabled(self) -> bool:

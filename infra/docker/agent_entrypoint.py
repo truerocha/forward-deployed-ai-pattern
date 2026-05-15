@@ -18,6 +18,7 @@ import os
 import sys
 
 import boto3
+from botocore.config import Config
 from botocore.exceptions import ClientError
 
 from agents.agent_builder import AgentBuilder
@@ -76,6 +77,24 @@ BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "us.anthropic.claude-sonne
 FACTORY_BUCKET = os.environ.get("FACTORY_BUCKET", "")
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "dev")
 
+# ─── Resilient Bedrock Configuration ────────────────────────────────────────
+# Prevents connection pool exhaustion and adds retry with backoff for:
+# - ConnectionError (pool exhaustion, NAT timeout, DNS failure)
+# - ThrottlingException (429)
+# - ServiceUnavailableException (503)
+#
+# These env vars are read by boto3 globally — affects Strands SDK agents too.
+os.environ.setdefault("AWS_MAX_ATTEMPTS", "5")
+os.environ.setdefault("AWS_RETRY_MODE", "adaptive")
+
+BEDROCK_CLIENT_CONFIG = Config(
+    region_name=AWS_REGION,
+    retries={"max_attempts": 5, "mode": "adaptive"},
+    max_pool_connections=25,
+    connect_timeout=30,
+    read_timeout=120,  # LLM inference can take 60-90s for complex prompts
+)
+
 
 def _build_llm_invoke_fn():
     """Build an LLM invocation function for the Constraint Extractor.
@@ -84,7 +103,7 @@ def _build_llm_invoke_fn():
     Returns None if Bedrock is not available, falling back to rule-based only.
     """
     try:
-        bedrock = boto3.client("bedrock-runtime", region_name=AWS_REGION)
+        bedrock = boto3.client("bedrock-runtime", config=BEDROCK_CLIENT_CONFIG)
 
         def invoke(prompt: str) -> str:
             response = bedrock.invoke_model(
