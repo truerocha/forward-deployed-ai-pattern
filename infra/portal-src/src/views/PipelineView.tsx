@@ -116,8 +116,8 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ tasks, metrics }) =>
             </Box>
           </div>
           <div>
-            <Box variant="awsui-key-label">Agents Provisioned</Box>
-            <Box variant="awsui-value-large">{metrics.total_agents_provisioned || 0}</Box>
+            <Box variant="awsui-key-label">Blocked</Box>
+            <Box variant="awsui-value-large">{metrics.dispatch_stuck || 0}</Box>
           </div>
         </ColumnLayout>
       </Container>

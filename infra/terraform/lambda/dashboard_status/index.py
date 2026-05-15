@@ -244,9 +244,32 @@ def _handle_tasks(event, context):
 
         # Compute metrics (24h window for rate metrics, full window for task list)
         cutoff_24h = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
-        active = sum(1 for i in items if i.get("status") in ("RUNNING", "PENDING", "READY", "IN_PROGRESS", "DISPATCHED"))
+        stale_dispatch_cutoff = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
+
+        # Reconcile stale DISPATCHED tasks: mark as DISPATCH_FAILED if >10min without start
+        for item in items:
+            if item.get("status") in ("DISPATCHED", "READY") and not item.get("started_at"):
+                if item.get("created_at", "") < stale_dispatch_cutoff:
+                    try:
+                        task_table.update_item(
+                            Key={"task_id": item["task_id"]},
+                            UpdateExpression="SET #s = :s, #e = :e, updated_at = :t",
+                            ExpressionAttributeNames={"#s": "status", "#e": "error"},
+                            ExpressionAttributeValues={
+                                ":s": "DISPATCH_FAILED",
+                                ":e": "Task dispatched but never started (>10min). Likely cause: missing container image or ECS capacity.",
+                                ":t": datetime.now(timezone.utc).isoformat(),
+                            },
+                        )
+                        item["status"] = "DISPATCH_FAILED"
+                    except Exception:
+                        pass
+
+        # Active = only tasks that are genuinely running (not stale dispatches)
+        active = sum(1 for i in items if i.get("status") in ("RUNNING", "IN_PROGRESS") or
+                     (i.get("status") in ("DISPATCHED", "PENDING", "READY") and i.get("created_at", "") >= stale_dispatch_cutoff))
         completed = sum(1 for i in items if i.get("status") == "COMPLETED" and i.get("updated_at", "") >= cutoff_24h)
-        failed = sum(1 for i in items if i.get("status") in ("FAILED", "DEAD_LETTER") and i.get("updated_at", "") >= cutoff_24h)
+        failed = sum(1 for i in items if i.get("status") in ("FAILED", "DEAD_LETTER", "DISPATCH_FAILED") and i.get("updated_at", "") >= cutoff_24h)
         durations = [int(i.get("duration_ms", 0)) for i in items if i.get("duration_ms")]
         avg_duration = int(sum(durations) / len(durations)) if durations else 0
 
@@ -942,6 +965,7 @@ def _map_status(dynamo_status: str) -> str:
         "COMPLETED": "completed",
         "FAILED": "failed",
         "DEAD_LETTER": "failed",
+        "DISPATCH_FAILED": "failed",
         "BLOCKED": "blocked",
         "REWORK": "rework",
         "APPROVED": "approved",
