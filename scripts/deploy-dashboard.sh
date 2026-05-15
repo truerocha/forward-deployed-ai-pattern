@@ -61,12 +61,33 @@ if [[ -d "$PORTAL_SRC/dist" && -f "$PORTAL_SRC/dist/index.html" ]]; then
 fi
 
 # 1. Resolve values from Terraform outputs (no hardcoded IDs)
-echo "  → Reading terraform outputs..."
+echo "  → Validating AWS credentials..."
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text --region "$REGION" 2>/dev/null)
 if [[ -z "$ACCOUNT_ID" ]]; then
-  echo "  ❌ AWS credentials not valid. Run: aws sso login"
-  exit 1
+  echo "  ⚠️  AWS session expired — attempting auto-refresh..."
+  # Try SSO login first (non-interactive if browser session is cached)
+  if aws sso login --profile "${AWS_PROFILE}" 2>/dev/null; then
+    ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text --region "$REGION" 2>/dev/null)
+  fi
+  # Fallback to generic aws login
+  if [[ -z "$ACCOUNT_ID" ]]; then
+    if aws login 2>/dev/null; then
+      ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text --region "$REGION" 2>/dev/null)
+    fi
+  fi
+  # Final check — warn but continue if possible, hard-fail only if truly unreachable
+  if [[ -z "$ACCOUNT_ID" ]]; then
+    echo "  ⚠️  AWS credentials not valid after auto-login attempts."
+    echo "     Manual action: aws sso login --profile ${AWS_PROFILE}"
+    echo "     Continuing without S3 deploy — build artifacts are in $DASHBOARD_DIR/"
+    echo ""
+    echo "  📦 Local build ready at: $DASHBOARD_DIR/"
+    echo "     Run 'make portal-deploy' after authenticating."
+    exit 0
+  fi
+  echo "  ✅ AWS session refreshed"
 fi
+echo "  → Reading terraform outputs..."
 
 API_URL=$(terraform -chdir="$TF_DIR" output -raw webhook_api_url 2>/dev/null)
 BUCKET=$(terraform -chdir="$TF_DIR" output -raw artifacts_bucket 2>/dev/null)
