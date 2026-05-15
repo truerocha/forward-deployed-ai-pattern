@@ -23,7 +23,7 @@ Rules:
 F4 (DoD) and F5 (Compound Review) consolidate into one "Quality Gate" card —
 they serve the same decision: "Is this task done to standard?"
 
-### Card 1: Quality Gate Compliance
+### Card 1: Quality Gate
 
 **Personas**: SWE, Staff
 **Decision**: "Which dimension fails most?" / "Should I tighten gates?"

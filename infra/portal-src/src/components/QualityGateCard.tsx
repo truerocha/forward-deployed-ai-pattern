@@ -61,7 +61,7 @@ export const QualityGateCard: React.FC<QualityGateCardProps> = ({ data }) => {
           description="DoD v3.0 + Compound Review"
           actions={<Badge color={passColor}>{d.passRate}% PASS</Badge>}
         >
-          Quality Gate Compliance
+          Quality Gate
         </Header>
       }
       footer={
