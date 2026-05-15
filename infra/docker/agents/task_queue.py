@@ -8,6 +8,7 @@ DynamoDB schema:
   PK: task_id (S), GSI: status-created-index (status S, created_at S)
 """
 
+import json
 import logging
 import os
 import uuid
@@ -15,6 +16,8 @@ from datetime import datetime, timezone
 
 import boto3
 from boto3.dynamodb.conditions import Key
+
+from .retry_utils import retry_with_backoff
 
 logger = logging.getLogger("fde.task_queue")
 
@@ -732,3 +735,80 @@ def resolve_max_concurrent(repo: str) -> int:
 
     # Priority 1: Default
     return 3
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Fix #2: Retry-wrapped critical operations (prevents DAG orphans)
+# Fix #4: Transactional Outbox (persist event payload at ingest)
+# ═══════════════════════════════════════════════════════════════════
+
+
+@retry_with_backoff(max_retries=3, base_delay=0.5, operation_name="complete_task")
+def complete_task_with_retry(task_id: str, result: str) -> dict:
+    """Retry-wrapped version of complete_task for critical path.
+
+    DAG resolution and counter decrement MUST succeed — failure means
+    orphaned dependent tasks and leaked concurrency slots.
+    """
+    return complete_task(task_id, result)
+
+
+@retry_with_backoff(max_retries=3, base_delay=0.5, operation_name="fail_task")
+def fail_task_with_retry(task_id: str, error: str) -> dict:
+    """Retry-wrapped version of fail_task for critical path.
+
+    Dependent blocking and counter decrement MUST succeed.
+    """
+    return fail_task(task_id, error)
+
+
+def persist_event_payload(task_id: str, event_payload: dict) -> None:
+    """Persist the full event payload alongside the task record.
+
+    Fixes: Pipeline loose end #4 — if the container crashes before
+    processing, the event payload is lost. By persisting it in DynamoDB
+    at ingest time, the orchestrator can read from DB instead of relying
+    on the ephemeral event.
+
+    Called by webhook_ingest Lambda immediately after creating the task.
+    The orchestrator reads this via `get_event_payload()` as fallback.
+    """
+    table = _get_table()
+    try:
+        payload_str = json.dumps(event_payload, default=str)
+        # Cap at 350KB to stay within DynamoDB item size limits
+        if len(payload_str) > 350_000:
+            logger.warning("Event payload too large (%d bytes) — truncating", len(payload_str))
+            payload_str = payload_str[:350_000]
+
+        table.update_item(
+            Key={"task_id": task_id},
+            UpdateExpression="SET event_payload = :payload, updated_at = :now",
+            ExpressionAttributeValues={
+                ":payload": payload_str,
+                ":now": _now(),
+            },
+        )
+        logger.info("Event payload persisted for task %s (%d bytes)", task_id, len(payload_str))
+    except Exception as e:
+        logger.warning("Failed to persist event payload for %s: %s", task_id, e)
+
+
+def get_event_payload(task_id: str) -> dict | None:
+    """Retrieve persisted event payload for a task.
+
+    Used by the orchestrator as fallback when the container restarts
+    and the original EventBridge event is no longer available.
+    """
+    task = get_task(task_id)
+    if not task:
+        return None
+
+    payload_str = task.get("event_payload")
+    if not payload_str:
+        return None
+
+    try:
+        return json.loads(payload_str)
+    except (json.JSONDecodeError, TypeError):
+        return None

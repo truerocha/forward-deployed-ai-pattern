@@ -461,3 +461,70 @@ def plan_exists(task_id: str, base_dir: str) -> bool:
     """
     plan_path = Path(base_dir) / task_id / "execution_plan.json"
     return plan_path.exists()
+
+
+# ─── DynamoDB Persistence (cross-container resume) ───────────────
+
+
+def save_plan_to_dynamodb(plan: ExecutionPlan, table_name: str = "") -> None:
+    """Persist execution plan to DynamoDB for cross-container resume.
+
+    Fixes: Pipeline loose end #3 — filesystem plans are lost when
+    ECS containers die. DynamoDB persists across container restarts.
+
+    The plan is stored as a JSON string in the task queue table
+    using the task_id as the partition key and 'execution_plan' as
+    a top-level attribute.
+    """
+    import boto3
+
+    table_name = table_name or os.environ.get("TASK_QUEUE_TABLE", "fde-dev-task-queue")
+    region = os.environ.get("AWS_REGION", "us-east-1")
+
+    table = boto3.resource("dynamodb", region_name=region).Table(table_name)
+
+    try:
+        table.update_item(
+            Key={"task_id": plan.task_id},
+            UpdateExpression="SET execution_plan = :plan, updated_at = :now",
+            ExpressionAttributeValues={
+                ":plan": json.dumps(plan.to_dict(), default=str),
+                ":now": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+        logger.info("Plan persisted to DynamoDB: task=%s", plan.task_id)
+    except Exception as e:
+        logger.warning("Failed to persist plan to DynamoDB (non-blocking): %s", e)
+
+
+def load_plan_from_dynamodb(task_id: str, table_name: str = "") -> Optional[ExecutionPlan]:
+    """Load execution plan from DynamoDB (cross-container resume).
+
+    Falls back to None if not found or invalid. The orchestrator
+    should try DynamoDB first, then filesystem as fallback.
+    """
+    import boto3
+
+    table_name = table_name or os.environ.get("TASK_QUEUE_TABLE", "fde-dev-task-queue")
+    region = os.environ.get("AWS_REGION", "us-east-1")
+
+    table = boto3.resource("dynamodb", region_name=region).Table(table_name)
+
+    try:
+        result = table.get_item(Key={"task_id": task_id})
+        item = result.get("Item", {})
+        plan_json = item.get("execution_plan")
+
+        if not plan_json:
+            return None
+
+        data = json.loads(plan_json)
+        plan = ExecutionPlan.from_dict(data)
+        logger.info(
+            "Plan loaded from DynamoDB: task=%s milestones=%d current=%d",
+            plan.task_id, len(plan.milestones), plan.current_milestone,
+        )
+        return plan
+    except Exception as e:
+        logger.warning("Failed to load plan from DynamoDB for %s: %s", task_id, e)
+        return None

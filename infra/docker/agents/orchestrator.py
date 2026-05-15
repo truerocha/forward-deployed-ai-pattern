@@ -496,17 +496,25 @@ class Orchestrator:
         # dashboard so the PM knows to investigate.
         if result.get("status") == "completed":
             try:
-                task_queue.complete_task(task_id, json.dumps(result, default=str))
+                task_queue.complete_task_with_retry(task_id, json.dumps(result, default=str))
                 logger.info("Task %s marked COMPLETED in queue (DAG resolution triggered)", task_id)
             except Exception as e:
-                logger.warning("Task queue update failed (non-blocking): %s", e)
+                logger.error(
+                    "CRITICAL: Task %s completion failed after retries — "
+                    "DAG orphans and leaked slots possible: %s",
+                    task_id, e,
+                )
         elif result.get("status") in ("partial", "error"):
             try:
                 error_msg = result.get("pipeline", [{}])[-1].get("error", "Pipeline incomplete")
-                task_queue.fail_task(task_id, error_msg)
+                task_queue.fail_task_with_retry(task_id, error_msg)
                 logger.info("Task %s marked FAILED in queue (dependents blocked)", task_id)
             except Exception as e:
-                logger.warning("Task queue failure update failed (non-blocking): %s", e)
+                logger.error(
+                    "CRITICAL: Task %s failure update failed after retries — "
+                    "dependents may be orphaned: %s",
+                    task_id, e,
+                )
 
         return result
 
