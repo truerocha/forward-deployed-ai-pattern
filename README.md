@@ -97,24 +97,91 @@ Five modular planes:
 
 ## Quick Start
 
+Choose your path based on what you want to do:
+
+### 🔍 Path A — Explore the Pattern (no setup)
+
+Just want to understand how it works? Start here:
+
 ```bash
-# 1. Clone and validate your environment
 git clone https://github.com/truerocha/forward-deployed-engineer-pattern.git
 cd forward-deployed-engineer-pattern
-bash scripts/pre-flight-fde.sh
-
-# 2. Validate ALM connectivity (GitHub / GitLab / Asana)
-bash scripts/validate-deploy-fde.sh
-
-# 3. Deploy the factory to your project
-bash scripts/code-factory-setup.sh
-
-# 4. Start working
-# Move items to "In Progress" on your board, or:
-#fde Execute the spec in .kiro/specs/my-feature.md
 ```
 
-See the [Adoption Guide](docs/guides/fde-adoption-guide.md) for a full walkthrough.
+Then read:
+- [Design Document](docs/architecture/design-document.md) — how the system is structured
+- [ADR Index](docs/adr/) — why each decision was made
+- [Flow Diagrams](docs/flows/README.md) — visual walkthroughs of 15 features
+
+No tokens, no cloud accounts, no configuration needed.
+
+### ⚡ Path B — See It Work Locally (5 minutes)
+
+Run the test suite and see the pipeline produce output on sample data:
+
+```bash
+git clone https://github.com/truerocha/forward-deployed-engineer-pattern.git
+cd forward-deployed-engineer-pattern
+
+# Run the full test suite (1078+ tests, no external dependencies)
+python3 -m pytest tests/ -v
+
+# Or run scoped tests to see specific layers:
+python3 scripts/run_tests.py --scope knowledge   # WAF mapping layer
+python3 scripts/run_tests.py --scope contract    # Cross-layer invariants
+python3 scripts/run_tests.py --scope portal-ui   # Portal rendering
+```
+
+**Requirements:** Python 3.10+, Git. No tokens or cloud accounts needed.
+
+See the [5-Minute Quickstart](docs/guides/quickstart-5min.md) for a guided walkthrough.
+
+### 🚀 Path C — Deploy to Your Project (30 minutes)
+
+Deploy the full factory to manage your own projects with AI agents:
+
+```bash
+git clone https://github.com/truerocha/forward-deployed-engineer-pattern.git
+cd forward-deployed-engineer-pattern
+
+# Step 1: Validate your machine + collect project config (interactive)
+bash scripts/pre-flight-fde.sh
+
+# Step 2: Validate connectivity (GitHub/GitLab/Asana APIs, AWS if opted in)
+bash scripts/validate-deploy-fde.sh
+
+# Step 3: Deploy the factory to your project workspace(s)
+bash scripts/code-factory-setup.sh
+```
+
+**What the scripts do:**
+- `pre-flight-fde.sh` — Checks your tools (git, node, python, docker), collects credentials interactively, writes a manifest to `~/.kiro/fde-manifest.json`
+- `validate-deploy-fde.sh` — Validates API access to your ALM platform (GitHub Projects, GitLab, or Asana)
+- `code-factory-setup.sh` — Installs hooks, steerings, and specs into your project workspace(s)
+
+**Requirements:** Git, Node.js, Python 3.10+, a GitHub/GitLab token. Docker and AWS are optional.
+
+Scripts operate as linters — they report all issues with fix instructions and never hard-break. Cloud deployment (AWS) is opt-in and defaults to "no".
+
+See the [Adoption Guide](docs/guides/fde-adoption-guide.md) for the full walkthrough.
+
+<details>
+<summary>📖 Glossary — key terms for newcomers</summary>
+
+| Term | Meaning |
+|------|---------|
+| **FDE** | Forward Deployed Engineer — an AI agent deployed into your project's specific context |
+| **Factory** | The orchestration system that manages multiple FDE agents across your projects |
+| **Spec** | A structured feature description (what to build + acceptance criteria) |
+| **ALM** | Application Lifecycle Management — your project board (GitHub Projects, Asana, GitLab) |
+| **MCP** | Model Context Protocol — how AI agents connect to external tools (GitHub API, etc.) |
+| **DoR / DoD** | Definition of Ready / Definition of Done — quality gates before and after execution |
+| **L2 / L3 / L4** | Engineering levels — how many quality gates are active (L2=minimal, L4=full) |
+| **Steering** | Configuration files that give the AI agent context about your project |
+| **Hook** | An automated action triggered by events (file save, task start, task end) |
+| **Régua** | Quality standard — the set of rules the factory enforces |
+
+</details>
 
 ---
 
