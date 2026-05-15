@@ -26,6 +26,9 @@ import { ConductorPlanCard } from '../components/ConductorPlanCard';
 import { DoraSunCard } from '../components/DoraSunCard';
 import { ReviewFeedbackCard } from '../components/ReviewFeedbackCard';
 import { CognitiveAutonomyCard } from '../components/CognitiveAutonomyCard';
+import { QualityGateCard } from '../components/QualityGateCard';
+import { PipelineHealthCard } from '../components/PipelineHealthCard';
+import { EvidenceConfidenceCard } from '../components/EvidenceConfidenceCard';
 import {
   mapDoraMetrics,
   mapCostMetrics,
@@ -43,10 +46,10 @@ interface ObservabilityViewProps {
 /** Persona card visibility matrix */
 const PERSONA_CARDS: Record<string, string[]> = {
   PM: ['DoraSunCard', 'ValueStreamCard', 'DoraCard', 'CostCard', 'TrustCard', 'NetFrictionCard', 'ReviewFeedbackCard', 'CognitiveAutonomyCard'],
-  SWE: ['LiveTimeline', 'GateFeedbackCard', 'SquadExecutionCard', 'BranchEvaluationCard', 'HumanInputCard', 'ConductorPlanCard', 'ReviewFeedbackCard', 'CognitiveAutonomyCard'],
-  SRE: ['DoraSunCard', 'DataQualityCard', 'GateHistoryCard', 'DoraCard', 'CostCard', 'ReviewFeedbackCard', 'CognitiveAutonomyCard'],
-  Architect: ['MaturityRadar', 'BrainSimCard', 'ConductorPlanCard', 'ValueStreamCard', 'DataQualityCard', 'NetFrictionCard'],
-  Staff: ['DoraSunCard', 'DoraCard', 'MaturityRadar', 'TrustCard', 'CostCard', 'BrainSimCard', 'ValueStreamCard', 'SquadExecutionCard', 'ReviewFeedbackCard', 'CognitiveAutonomyCard'],
+  SWE: ['LiveTimeline', 'GateFeedbackCard', 'SquadExecutionCard', 'BranchEvaluationCard', 'HumanInputCard', 'ConductorPlanCard', 'ReviewFeedbackCard', 'CognitiveAutonomyCard', 'QualityGateCard'],
+  SRE: ['DoraSunCard', 'DataQualityCard', 'GateHistoryCard', 'DoraCard', 'CostCard', 'ReviewFeedbackCard', 'CognitiveAutonomyCard', 'PipelineHealthCard'],
+  Architect: ['MaturityRadar', 'BrainSimCard', 'ConductorPlanCard', 'ValueStreamCard', 'DataQualityCard', 'NetFrictionCard', 'EvidenceConfidenceCard'],
+  Staff: ['DoraSunCard', 'DoraCard', 'MaturityRadar', 'TrustCard', 'CostCard', 'BrainSimCard', 'ValueStreamCard', 'SquadExecutionCard', 'ReviewFeedbackCard', 'CognitiveAutonomyCard', 'QualityGateCard', 'PipelineHealthCard', 'EvidenceConfidenceCard'],
 };
 
 export const ObservabilityView: React.FC<ObservabilityViewProps> = ({
@@ -75,6 +78,9 @@ export const ObservabilityView: React.FC<ObservabilityViewProps> = ({
     ConductorPlanCard: <ConductorPlanCard />,
     ReviewFeedbackCard: <ReviewFeedbackCard />,
     CognitiveAutonomyCard: <CognitiveAutonomyCard />,
+    QualityGateCard: <QualityGateCard />,
+    PipelineHealthCard: <PipelineHealthCard />,
+    EvidenceConfidenceCard: <EvidenceConfidenceCard />,
   };
 
   const renderCards = () => (
