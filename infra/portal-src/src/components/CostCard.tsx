@@ -103,20 +103,33 @@ export const CostCard: React.FC<CostCardProps> = ({ summary }) => {
           </SpaceBetween>
         </div>
 
-        {/* Per-agent breakdown */}
+        {/* Per-agent breakdown — deduplicated, top 5 by cost */}
         <div>
-          <Box fontSize="body-s" color="text-body-secondary" margin={{ bottom: 'xs' }}>By Agent</Box>
+          <Box fontSize="body-s" color="text-body-secondary" margin={{ bottom: 'xs' }}>By Agent (top 5)</Box>
           <SpaceBetween size="xs">
-            {summary.cost_by_agent.map((agent) => (
-              <div key={agent.agent}>
-                <ProgressBar
-                  value={(agent.cost_usd / maxAgentCost) * 100}
-                  label={agent.agent}
-                  additionalInfo={`$${agent.cost_usd.toFixed(4)}`}
-                  variant="standalone"
-                />
-              </div>
-            ))}
+            {(() => {
+              // Deduplicate: aggregate costs by unique agent name
+              const agentMap = new Map<string, number>();
+              for (const agent of summary.cost_by_agent) {
+                agentMap.set(agent.agent, (agentMap.get(agent.agent) || 0) + agent.cost_usd);
+              }
+              // Sort by cost descending, take top 5
+              const topAgents = Array.from(agentMap.entries())
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 5);
+              const maxCost = topAgents.length > 0 ? topAgents[0][1] : 0.001;
+
+              return topAgents.map(([name, cost]) => (
+                <div key={name}>
+                  <ProgressBar
+                    value={(cost / maxCost) * 100}
+                    label={name}
+                    additionalInfo={`$${cost.toFixed(4)}`}
+                    variant="standalone"
+                  />
+                </div>
+              ));
+            })()}
           </SpaceBetween>
         </div>
       </SpaceBetween>

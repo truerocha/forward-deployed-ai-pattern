@@ -7,6 +7,7 @@ import Tabs from '@cloudscape-design/components/tabs';
 import Grid from '@cloudscape-design/components/grid';
 import Header from '@cloudscape-design/components/header';
 import SpaceBetween from '@cloudscape-design/components/space-between';
+import Box from '@cloudscape-design/components/box';
 
 import { DoraCard } from '../components/DoraCard';
 import { CostCard } from '../components/CostCard';
@@ -83,21 +84,61 @@ export const ObservabilityView: React.FC<ObservabilityViewProps> = ({
     EvidenceConfidenceCard: <EvidenceConfidenceCard />,
   };
 
-  const renderCards = () => (
-    <Grid
-      gridDefinition={visibleCards.map(() => ({ colspan: { l: 6, m: 6, default: 12 } }))}
-    >
-      {visibleCards.map((cardName) => {
-        const card = cardRegistry[cardName];
-        if (!card) return <div key={cardName} />;
-        return (
-          <div key={cardName}>
-            {card}
-          </div>
-        );
-      })}
-    </Grid>
-  );
+  /** Determine if a card has data worth showing (suppress empty states) */
+  const hasData = (cardName: string): boolean => {
+    switch (cardName) {
+      case 'LiveTimeline': return !!(factoryData?.tasks?.length > 0);
+      case 'GateFeedbackCard': return !!(factoryData?.tasks?.some((t: any) => t.events?.some((e: any) => e.type === 'gate')));
+      case 'GateHistoryCard': return !!(mapGateHistory(factoryData)?.length > 0);
+      case 'SquadExecutionCard': return !!(mapSquadExecution(factoryData)?.length > 0);
+      case 'ConductorPlanCard': return !!(factoryData?.conductor?.steps?.length > 0);
+      case 'ReviewFeedbackCard': return !!(factoryData?.metrics_data?.review_feedback);
+      case 'CognitiveAutonomyCard': return !!(factoryData?.metrics_data?.cognitive_autonomy);
+      case 'BranchEvaluationCard': return !!(factoryData?.branch_evaluation);
+      case 'HumanInputCard': return !!(factoryData?.human_input?.pending);
+      case 'ValueStreamCard': return !!(factoryData?.metrics_data?.vsm);
+      case 'MaturityRadar': return !!(factoryData?.metrics_data?.maturity);
+      case 'BrainSimCard': return !!(factoryData?.metrics_data?.brain_sim || factoryData?.metrics_data?.fidelity);
+      case 'TrustCard': return !!(factoryData?.metrics_data?.trust);
+      case 'NetFrictionCard': return !!(factoryData?.metrics_data?.friction);
+      case 'DataQualityCard': return !!(factoryData?.metrics_data?.data_quality);
+      case 'EvidenceConfidenceCard': return !!(factoryData?.metrics_data?.evidence_confidence);
+      case 'PipelineHealthCard': return !!(factoryData?.metrics_data?.pipeline_health);
+      case 'QualityGateCard': return !!(factoryData?.tasks?.some((t: any) => t.events?.some((e: any) => e.type === 'gate')));
+      // Cost card always shows if there's any cost data
+      case 'CostCard': return !!(mapCostMetrics(factoryData));
+      default: return true;
+    }
+  };
+
+  const renderCards = () => {
+    // Filter to only cards that have data to display
+    const cardsWithData = visibleCards.filter((cardName) => hasData(cardName));
+
+    if (cardsWithData.length === 0) {
+      return (
+        <Box textAlign="center" padding="xl" color="text-status-inactive">
+          No observability data available yet. Data will appear once tasks execute.
+        </Box>
+      );
+    }
+
+    return (
+      <Grid
+        gridDefinition={cardsWithData.map(() => ({ colspan: { l: 6, m: 6, default: 12 } }))}
+      >
+        {cardsWithData.map((cardName) => {
+          const card = cardRegistry[cardName];
+          if (!card) return <div key={cardName} />;
+          return (
+            <div key={cardName}>
+              {card}
+            </div>
+          );
+        })}
+      </Grid>
+    );
+  };
 
   return (
     <SpaceBetween size="l">
