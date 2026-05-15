@@ -68,7 +68,7 @@ export const HealthView: React.FC<HealthViewProps> = ({ factoryData, apiStatus }
               <div key={idx}>
                 <SpaceBetween direction="horizontal" size="xs" alignItems="center">
                   <StatusIndicator
-                    type={check.status === 'healthy' ? 'success' : check.status === 'degraded' ? 'warning' : 'error'}
+                    type={check.status === 'pass' ? 'success' : check.status === 'warn' ? 'warning' : 'error'}
                   >
                     {check.name}
                   </StatusIndicator>
@@ -96,8 +96,8 @@ export const HealthView: React.FC<HealthViewProps> = ({ factoryData, apiStatus }
               { label: 'Completed (24h)', value: String(metrics.completed_24h || 0) },
               { label: 'Failed (24h)', value: String(metrics.failed_24h || 0) },
               { label: 'Avg Duration', value: `${((metrics.avg_duration_ms || 0) / 60000).toFixed(1)} min` },
-              { label: 'Agents Provisioned', value: String(metrics.total_agents_provisioned || 0) },
               { label: 'Active Agents', value: String(metrics.active_agents || 0) },
+              { label: 'Blocked', value: String(metrics.dispatch_stuck || 0) },
             ]}
           />
         </Container>
