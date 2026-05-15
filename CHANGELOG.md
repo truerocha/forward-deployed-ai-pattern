@@ -6,6 +6,48 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ---
 
+## [Unreleased] — 2026-05-15
+
+### Added — Extension Opt-In System (ADR-032)
+- `fde-profile.json` — Per-project FDE intensity configuration. Presets: minimal, standard, strict, custom. Gates and extensions individually toggleable. Backward compatible: missing file = all gates ON.
+- `scripts/validate_fde_profile.py` — Schema validation, preset consistency checks, extension dependency validation. Exit 0 = valid, exit 1 = errors, exit 2 = file not found (acceptable default).
+
+### Added — Multi-Platform Rule Distribution
+- `scripts/export_fde_rules.py` — Exports canonical `.kiro/steering/fde.md` to 6 platforms: Q Developer (`.amazonq/rules/`), Cursor (`.cursor/rules/`), Cline (`.clinerules/`), Claude Code (`.claude/`), GitHub Copilot (`.github/`), AI-DLC (`.aidlc-rule-details/fde/`). Hash-based drift detection (`--verify` mode). Single source of truth, generated outputs.
+- `.amazonq/rules/fde-workflow.md` — Auto-generated Q Developer rules.
+- `.cursor/rules/fde-workflow.mdc` — Auto-generated Cursor rules with frontmatter.
+- `.clinerules/fde-workflow.md` — Auto-generated Cline rules.
+- `.claude/fde-workflow.md` — Auto-generated Claude Code rules.
+- `.github/fde-instructions.md` — Auto-generated Copilot instructions.
+- `.aidlc-rule-details/fde/fde-quality-gates.md` — Auto-generated AI-DLC extension.
+
+### Added — Brown-Field Elevation & DDD Design Phase (ADR-033)
+- `src/core/orchestration/design_phase_injector.py` — Injects optional architect steps into Conductor plans. Reads `fde-profile.json` extensions. Computes design steps based on cognitive depth threshold and brown-field detection. Re-indexes existing plan steps and updates access_lists so coder/reviewer agents reference design artifacts.
+- `docs/adr/ADR-032-fde-extension-opt-in-system.md` — Architecture decision record for the extension opt-in system.
+- `docs/adr/ADR-033-brownfield-elevation-ddd-design-phase.md` — Architecture decision record for brown-field elevation and DDD design phase.
+
+### Changed — Portal: Complete Cloudscape UX Migration (ADR-031)
+- `infra/portal-src/src/components/CognitiveAutonomyCard.tsx` — Migrated from Tailwind/bento to Cloudscape (Container+ProgressBar+Badge+ColumnLayout+StatusIndicator).
+- `infra/portal-src/src/components/ReviewFeedbackCard.tsx` — Migrated from Tailwind/bento to Cloudscape (Container+Alert+KeyValuePairs+ProgressBar+Badge).
+- `infra/portal-src/src/components/ConductorPlanCard.tsx` — Migrated from Tailwind/bento+motion to Cloudscape (Container+ProgressBar+StatusIndicator+Badge).
+- `infra/portal-src/src/index.css` — Purged all legacy CSS: bento-card, utility classes, custom variables, body transitions, focus-visible override. Reduced to 30 lines (layout + scrollbar only).
+- `infra/portal-src/package.json` — Removed `lucide-react` and `motion` dependencies.
+
+### Removed — Dead Legacy Portal Components
+- `infra/portal-src/src/components/MetricsCard.tsx` — Replaced by Cloudscape DoraCard.
+- `infra/portal-src/src/components/AgentSidebar.tsx` — Replaced by Cloudscape AgentsView.
+- `infra/portal-src/src/components/Terminal.tsx` — Replaced by Cloudscape ReasoningView.
+- `infra/portal-src/src/components/RegistriesCard.tsx` — Replaced by Cloudscape RegistriesView.
+- `infra/portal-src/src/components/PersonaRouter.tsx` — Replaced by Cloudscape Tabs in ObservabilityView.
+- `infra/portal-src/src/components/ComponentHealthCard.tsx` — Replaced by Cloudscape HealthView.
+- `infra/portal-src/src/components/PersonaFilteredCards.tsx` — Replaced by ObservabilityView Grid.
+- `infra/portal-src/src/components/Header.tsx` — Replaced by Cloudscape TopNavigation.
+
+### Fixed — Portal Scroll Behavior
+- `infra/portal-src/src/index.css` — Removed `min-height: 100vh` from `#root` (was creating double scroll context). Changed to `min-height: 100%` to let AppLayout manage its own scroll.
+
+---
+
 ## [Unreleased] — 2026-05-13
 
 ### Added — Review Feedback Loop with ICRL Enhancement (ADR-027)

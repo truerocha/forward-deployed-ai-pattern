@@ -6,8 +6,10 @@ An enterprise-grade pattern for AI-driven software development where **AI agents
 
 [![Autonomy](https://img.shields.io/badge/autonomy-L4%20Factory-7c3aed)]()
 [![DORA](https://img.shields.io/badge/DORA-Elite%20target-059669)]()
-[![Tests](https://img.shields.io/badge/tests-217%20passing-22c55e)]()
-[![ADRs](https://img.shields.io/badge/decisions-24%20ADRs-3b82f6)]()
+[![Tests](https://img.shields.io/badge/tests-1078%2B%20passing-22c55e)]()
+[![ADRs](https://img.shields.io/badge/decisions-33%20ADRs-3b82f6)]()
+[![AI-DLC](https://img.shields.io/badge/AI--DLC-compatible-FF9900)]()
+[![Platforms](https://img.shields.io/badge/platforms-Kiro%20%7C%20Q%20%7C%20Cursor%20%7C%20Copilot%20%7C%20Cline%20%7C%20Claude-blue)]()
 
 ---
 
@@ -51,11 +53,15 @@ Not general-purpose assistants. AI agents deployed into **your project's specifi
 
 ### 2. Predictive Risk Scoring
 
-Before any agent executes, a **Bayesian Risk Engine** calculates `P(Failure|Context)` using 16 signals (code complexity, DORA metrics, failure history, design quality). High-risk tasks are blocked or escalated automatically. The engine self-improves via gradient descent on outcomes.
+Before any agent executes, a **Bayesian Risk Engine** calculates `P(Failure|Context)` using 18 signals (code complexity, DORA metrics, failure history, design quality, reasoning divergence, coordination overhead). High-risk tasks are blocked or escalated automatically. The engine self-improves via gradient descent on outcomes.
 
 ### 3. SWE Synapses — Design Intelligence
 
-Five cognitive design principles (grounded in peer-reviewed research) fire before the Conductor generates a plan. They determine whether to plan or explore (Ralph 2013), whether decomposition is cost-justified (Homay 2025), whether agent responsibilities are deep enough (Ousterhout), whether the architectural bundle is coherent (Wei 2026), and what the system actually knows about the domain (King & Kimble 2004). The result: prescriptive guidance instead of reactive gating.
+Five cognitive design principles (grounded in peer-reviewed research) fire before the Conductor generates a plan. They determine whether to plan or explore (Ralph 2013), whether decomposition is cost-justified (Homay 2025), whether agent responsibilities are deep enough (Ousterhout), whether the architectural bundle is coherent (Wei 2026), and what the system actually knows about the domain (King & Kimble 2004). Two additional synapses (6: Transparency, 7: Deterministic Harness) provide runtime governance. The result: prescriptive guidance instead of reactive gating.
+
+### 4. AI-DLC Alignment & Multi-Platform Support
+
+The factory implements the [AI-DLC methodology](https://github.com/awslabs/aidlc-workflows) and exports its rules to **6 platforms** (Kiro, Q Developer, Cursor, Cline, Claude Code, Copilot). An **Extension Opt-In System** (`fde-profile.json`) lets teams tune FDE intensity per project — from minimal (DoR + DoD only) to strict (all gates + all extensions). Optional **Brown-Field Elevation** and **DDD Design Phase** inject domain modeling steps before code generation for complex tasks.
 
 ### 4. Dynamic Agent Squads
 
@@ -131,7 +137,7 @@ forward-deployed-engineer-pattern/
 ├── .kiro/                    # Factory template (hooks, steering, specs)
 ├── docs/
 │   ├── architecture/         # System diagrams + design document
-│   ├── adr/                  # 22 Architecture Decision Records
+│   ├── adr/                  # 33 Architecture Decision Records
 │   ├── flows/                # 15 feature flow diagrams (Mermaid)
 │   ├── blueprint/            # Full blueprint + deploy guide
 │   └── guides/               # Adoption guide, auth setup, deployment
@@ -141,7 +147,7 @@ forward-deployed-engineer-pattern/
 │   ├── docker/               # Agent containers + 28 agent modules
 │   └── portal-src/           # Observability dashboard (React)
 ├── scripts/                  # Setup, validation, deployment
-└── tests/                    # 217 tests
+└── tests/                    # 1078+ tests
 ```
 
 ---
@@ -160,6 +166,13 @@ forward-deployed-engineer-pattern/
 | Dynamic Squads | Task-adaptive agent composition (3-8 agents per task) | [ADR-019](docs/adr/ADR-019-agentic-squad-architecture.md) |
 | Conductor | RL-inspired workflow planning with focused subtask instructions | [ADR-020](docs/adr/ADR-020-conductor-orchestration-pattern.md) |
 | Risk Inference | Bayesian P(Failure\|Context) with self-improving weights | [ADR-022](docs/adr/ADR-022-risk-inference-engine.md) |
+| DORA Forecast | Predictive DORA metrics with EWMA projection | [ADR-023](docs/adr/ADR-023-dora-forecast-engine.md) |
+| SWE Synapses | 7 cognitive design principles for agent architecture | [ADR-024](docs/adr/ADR-024-swe-synapses-cognitive-architecture.md) |
+| Review Feedback Loop | ICRL closed-loop learning from human PR reviews | [ADR-027](docs/adr/ADR-027-review-feedback-loop.md) |
+| Cognitive Autonomy | Depth-calibrated autonomy with trust-building | [ADR-029](docs/adr/ADR-029-cognitive-autonomy-model.md) |
+| Cloudscape Portal | AWS Cloudscape Design System observability dashboard | [ADR-031](docs/adr/ADR-031-cloudscape-ux-reformulation.md) |
+| Extension Opt-In | Per-project FDE intensity tuning via fde-profile.json | [ADR-032](docs/adr/ADR-032-fde-extension-opt-in-system.md) |
+| DDD Design Phase | Brown-field elevation + domain modeling before code gen | [ADR-033](docs/adr/ADR-033-brownfield-elevation-ddd-design-phase.md) |
 
 ---
 
@@ -224,15 +237,17 @@ Built on six peer-reviewed studies:
 | You want to deploy cloud infra | [Deployment Setup](docs/guides/deployment-setup.md) |
 | You want to understand the design | [Design Document](docs/architecture/design-document.md) |
 | You want to see feature flows | [15 Flow Diagrams](docs/flows/README.md) |
-| You want decision rationale | [22 ADRs](docs/adr/) |
+| You want decision rationale | [33 ADRs](docs/adr/) |
 
 ---
 
 ## Running Tests
 
 ```bash
-python3 -m pytest tests/ -v          # Full suite (217 tests)
-python3 -m pytest tests/test_risk_inference_engine.py  # Risk engine only
+python3 -m pytest tests/ -v          # Full suite (1078+ tests)
+python3 scripts/run_tests.py         # All scopes (knowledge, contract, portal-ui)
+python3 scripts/validate_fde_profile.py  # Validate FDE profile
+python3 scripts/export_fde_rules.py --verify  # Verify multi-platform rule sync
 ```
 
 ---
