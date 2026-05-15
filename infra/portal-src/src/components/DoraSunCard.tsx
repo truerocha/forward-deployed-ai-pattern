@@ -1,19 +1,16 @@
 /**
- * DoraSunCard — The pulsing DORA health indicator.
- *
- * Implements PEC Blueprint Chapter 11 ("DORA Sun"):
- *   "O componente central que pulsa com a saúde da Squad."
- *
- * Displays:
- *   - Health pulse (0-100) as a radial gauge with pulsing animation
- *   - Current DORA level (Elite/High/Medium/Low)
- *   - Projected level at T+7d
- *   - Weakest metric identification
- *   - Trend arrows per metric
+ * DoraSunCard — DORA health pulse indicator.
+ * Pattern: Cloudscape Container + constrained SVG gauge.
  */
-
 import React from 'react';
-import { Sun, TrendingUp, TrendingDown, Minus, AlertTriangle } from 'lucide-react';
+
+import Container from '@cloudscape-design/components/container';
+import Header from '@cloudscape-design/components/header';
+import Box from '@cloudscape-design/components/box';
+import SpaceBetween from '@cloudscape-design/components/space-between';
+import StatusIndicator from '@cloudscape-design/components/status-indicator';
+import ColumnLayout from '@cloudscape-design/components/column-layout';
+import Badge from '@cloudscape-design/components/badge';
 
 interface ForecastData {
   health_pulse?: number;
@@ -35,24 +32,36 @@ interface DoraSunCardProps {
   forecast?: ForecastData | null;
 }
 
-const LEVEL_COLORS: Record<string, string> = {
-  Elite: 'text-emerald-400',
-  High: 'text-sky-400',
-  Medium: 'text-amber-400',
-  Low: 'text-red-400',
-};
+function getLevelBadgeColor(level: string): 'green' | 'blue' | 'red' | 'grey' {
+  switch (level) {
+    case 'Elite': return 'green';
+    case 'High': return 'blue';
+    case 'Low': return 'red';
+    default: return 'grey';
+  }
+}
 
-const LEVEL_BG: Record<string, string> = {
-  Elite: 'bg-emerald-500/10 border-emerald-500/20',
-  High: 'bg-sky-500/10 border-sky-500/20',
-  Medium: 'bg-amber-500/10 border-amber-500/20',
-  Low: 'bg-red-500/10 border-red-500/20',
-};
+function getTrendStatus(direction: string): 'success' | 'error' | 'stopped' {
+  if (direction === 'improving') return 'success';
+  if (direction === 'degrading') return 'error';
+  return 'stopped';
+}
 
-const TrendArrow: React.FC<{ direction: string }> = ({ direction }) => {
-  if (direction === 'improving') return <TrendingUp className="w-3 h-3 text-emerald-400" aria-label="Improving" />;
-  if (direction === 'degrading') return <TrendingDown className="w-3 h-3 text-red-400" aria-label="Degrading" />;
-  return <Minus className="w-3 h-3 text-slate-400" aria-label="Stable" />;
+const PulseGauge: React.FC<{ pulse: number }> = ({ pulse }) => {
+  const arcDegrees = (pulse / 100) * 270;
+  const color = pulse >= 80 ? '#10b981' : pulse >= 50 ? '#f59e0b' : '#ef4444';
+
+  return (
+    <div style={{ position: 'relative', width: '80px', height: '80px', margin: '0 auto' }}>
+      <svg width="80" height="80" viewBox="0 0 100 100" style={{ transform: 'rotate(-135deg)' }} role="img" aria-label={`Health pulse: ${pulse}/100`}>
+        <circle cx="50" cy="50" r="42" fill="none" stroke="var(--color-border-divider-default, #414d5c)" strokeWidth="8" strokeDasharray="198" strokeDashoffset="0" strokeLinecap="round" />
+        <circle cx="50" cy="50" r="42" fill="none" stroke={color} strokeWidth="8" strokeDasharray="198" strokeDashoffset={198 - (198 * (arcDegrees / 270))} strokeLinecap="round" />
+      </svg>
+      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Box variant="awsui-value-large">{pulse}</Box>
+      </div>
+    </div>
+  );
 };
 
 export const DoraSunCard: React.FC<DoraSunCardProps> = ({ forecast }) => {
@@ -63,80 +72,66 @@ export const DoraSunCard: React.FC<DoraSunCardProps> = ({ forecast }) => {
   const weakestReason = forecast?.weakest_reason || '';
   const metrics = forecast?.metrics;
 
-  const pulseSpeed = pulse >= 80 ? '2s' : pulse >= 50 ? '3s' : '4s';
-  const arcDegrees = (pulse / 100) * 270;
+  if (!forecast) {
+    return (
+      <Container header={<Header variant="h3">DORA Sun</Header>}>
+        <Box textAlign="center" padding="l" color="inherit">
+          <StatusIndicator type="pending">Awaiting forecast data (requires 3+ weekly snapshots)</StatusIndicator>
+        </Box>
+      </Container>
+    );
+  }
 
   return (
-    <div className="bg-bg-card border border-border-main rounded-xl p-4 relative overflow-hidden">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <Sun
-            className={`w-5 h-5 ${LEVEL_COLORS[level] || 'text-amber-400'}`}
-            style={{ animation: `pulse ${pulseSpeed} ease-in-out infinite` }}
-            aria-hidden="true"
-          />
-          <h3 className="text-xs font-bold text-dynamic uppercase tracking-wider">DORA Sun</h3>
-        </div>
-        <div className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase border ${LEVEL_BG[level] || LEVEL_BG['Medium']}`}>
-          <span className={LEVEL_COLORS[level] || 'text-amber-400'}>{level}</span>
-        </div>
-      </div>
+    <Container
+      header={
+        <Header variant="h3" actions={<Badge color={getLevelBadgeColor(level)}>{level}</Badge>}>
+          DORA Sun
+        </Header>
+      }
+      footer={
+        <Box fontSize="body-s" color="text-body-secondary">
+          7d forecast: {level !== projected ? `${level} → ${projected}` : `${level} (stable)`}
+        </Box>
+      }
+    >
+      <SpaceBetween size="m">
+        {/* Pulse gauge */}
+        <PulseGauge pulse={pulse} />
 
-      <div className="flex items-center justify-center my-4">
-        <div className="relative w-24 h-24">
-          <svg className="w-full h-full -rotate-[135deg]" viewBox="0 0 100 100" aria-hidden="true">
-            <circle cx="50" cy="50" r="42" fill="none" stroke="currentColor" strokeWidth="8" strokeDasharray="198" strokeDashoffset="0" strokeLinecap="round" className="text-white/5" />
-            <circle cx="50" cy="50" r="42" fill="none" stroke="currentColor" strokeWidth="8" strokeDasharray="198" strokeDashoffset={198 - (198 * (arcDegrees / 270))} strokeLinecap="round" className={pulse >= 80 ? 'text-emerald-400' : pulse >= 50 ? 'text-amber-400' : 'text-red-400'} />
-          </svg>
-          <div className="absolute inset-0 flex items-center justify-center">
-            <span className="text-2xl font-mono font-bold text-dynamic">{pulse}</span>
-          </div>
-        </div>
-      </div>
+        {/* Metric trends */}
+        {metrics && (
+          <ColumnLayout columns={4} variant="text-grid">
+            {[
+              { key: 'lead_time', label: 'Lead Time' },
+              { key: 'deploy_frequency', label: 'Deploy Freq' },
+              { key: 'change_fail_rate', label: 'CFR' },
+              { key: 'mttr', label: 'MTTR' },
+            ].map(({ key, label }) => {
+              const metric = metrics[key as keyof typeof metrics];
+              return (
+                <div key={key} style={{ textAlign: 'center' }}>
+                  <Box fontSize="body-s" color="text-body-secondary">{label}</Box>
+                  {metric ? (
+                    <StatusIndicator type={getTrendStatus(metric.trend_direction)}>
+                      {metric.current_value?.toFixed(1) || '—'}
+                    </StatusIndicator>
+                  ) : (
+                    <StatusIndicator type="stopped">—</StatusIndicator>
+                  )}
+                </div>
+              );
+            })}
+          </ColumnLayout>
+        )}
 
-      <div className="flex items-center justify-center gap-2 mb-3">
-        <span className="text-[9px] text-secondary-dynamic">7d forecast:</span>
-        <span className={`text-[10px] font-bold ${LEVEL_COLORS[projected] || 'text-amber-400'}`}>
-          {level !== projected ? `${level} → ${projected}` : `${level} (stable)`}
-        </span>
-      </div>
-
-      {metrics && (
-        <div className="grid grid-cols-4 gap-2 mb-3">
-          {[
-            { key: 'lead_time', label: 'LT' },
-            { key: 'deploy_frequency', label: 'DF' },
-            { key: 'change_fail_rate', label: 'CFR' },
-            { key: 'mttr', label: 'MTTR' },
-          ].map(({ key, label }) => {
-            const metric = metrics[key as keyof typeof metrics];
-            return (
-              <div key={key} className="flex flex-col items-center gap-0.5">
-                <span className="text-[8px] text-secondary-dynamic font-mono">{label}</span>
-                {metric ? <TrendArrow direction={metric.trend_direction} /> : <Minus className="w-3 h-3 text-slate-500" />}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {weakest && (
-        <div className="flex items-center gap-2 p-2 rounded-lg bg-red-500/5 border border-red-500/10">
-          <AlertTriangle className="w-3 h-3 text-red-400 shrink-0" aria-hidden="true" />
-          <div className="min-w-0">
-            <p className="text-[9px] font-bold text-red-400 uppercase">Weakest: {weakest.replace('_', ' ')}</p>
-            {weakestReason && <p className="text-[8px] text-secondary-dynamic truncate">{weakestReason}</p>}
-          </div>
-        </div>
-      )}
-
-      {!forecast && (
-        <div className="flex flex-col items-center justify-center py-4 opacity-40">
-          <Sun className="w-8 h-8 mb-2" />
-          <p className="text-[9px] font-mono uppercase">Awaiting forecast data</p>
-          <p className="text-[8px] text-secondary-dynamic">Requires 3+ weekly snapshots</p>
-        </div>
-      )}
-    </div>
+        {/* Weakest metric alert */}
+        {weakest && (
+          <StatusIndicator type="error">
+            Weakest: {weakest.replace(/_/g, ' ')}{weakestReason ? ` — ${weakestReason}` : ''}
+          </StatusIndicator>
+        )}
+      </SpaceBetween>
+    </Container>
   );
 };

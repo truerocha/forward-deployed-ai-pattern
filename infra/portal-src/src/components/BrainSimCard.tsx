@@ -1,177 +1,70 @@
+/**
+ * BrainSimCard — Brain Simulation metrics.
+ * Pattern: Cloudscape Container shell + custom SVG sparkline.
+ */
 import React from 'react';
-import { Brain, AlertTriangle, TrendingUp } from 'lucide-react';
+import Container from '@cloudscape-design/components/container';
+import Header from '@cloudscape-design/components/header';
+import Box from '@cloudscape-design/components/box';
+import SpaceBetween from '@cloudscape-design/components/space-between';
+import StatusIndicator from '@cloudscape-design/components/status-indicator';
+import ColumnLayout from '@cloudscape-design/components/column-layout';
+import Badge from '@cloudscape-design/components/badge';
 
 interface BrainSimCardProps {
   fidelity_trend?: number[] | null;
   emulation_ratio_percent?: number;
   organism_level?: string;
   memory_wall_detected?: boolean;
-  // Synapse 6: Transparency metrics
   transparency_score?: number;
   reasoning_divergence_avg?: number;
   execution_mode?: 'standard' | 'heartbeat';
   heartbeat_cycles?: number;
 }
 
-const Sparkline: React.FC<{ data: number[]; width?: number; height?: number }> = ({
-  data,
-  width = 120,
-  height = 32,
-}) => {
+const Sparkline: React.FC<{ data: number[]; width?: number; height?: number }> = ({ data, width = 140, height = 36 }) => {
   if (data.length < 2) return null;
-
-  const min = Math.min(...data);
-  const max = Math.max(...data);
-  const range = max - min || 1;
+  const min = Math.min(...data); const max = Math.max(...data); const range = max - min || 1;
   const stepX = width / (data.length - 1);
-
-  const points = data.map((v, i) => ({
-    x: i * stepX,
-    y: height - ((v - min) / range) * (height - 4) - 2,
-  }));
-
+  const points = data.map((v, i) => ({ x: i * stepX, y: height - ((v - min) / range) * (height - 4) - 2 }));
   const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
-
-  // Gradient fill area
   const areaD = pathD + ` L ${points[points.length - 1].x.toFixed(1)} ${height} L 0 ${height} Z`;
-
   return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="overflow-visible">
-      <defs>
-        <linearGradient id="sparkGradient" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="rgb(255, 153, 0)" stopOpacity="0.3" />
-          <stop offset="100%" stopColor="rgb(255, 153, 0)" stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <path d={areaD} fill="url(#sparkGradient)" />
-      <path d={pathD} fill="none" stroke="rgb(255, 153, 0)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-      {/* Latest point */}
-      <circle
-        cx={points[points.length - 1].x}
-        cy={points[points.length - 1].y}
-        r="2.5"
-        fill="rgb(255, 153, 0)"
-        stroke="white"
-        strokeWidth="1"
-      />
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Fidelity trend" style={{ display: 'block', margin: '0 auto' }}>
+      <defs><linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#FF9900" stopOpacity="0.3" /><stop offset="100%" stopColor="#FF9900" stopOpacity="0" /></linearGradient></defs>
+      <path d={areaD} fill="url(#sparkGrad)" /><path d={pathD} fill="none" stroke="#FF9900" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={points[points.length - 1].x} cy={points[points.length - 1].y} r="2.5" fill="#FF9900" stroke="var(--color-background-container-content, white)" strokeWidth="1" />
     </svg>
   );
 };
 
-const ORGANISM_LEVELS: Record<string, { label: string; color: string }> = {
-  reactive: { label: 'Reactive', color: 'text-slate-400' },
-  adaptive: { label: 'Adaptive', color: 'text-sky-400' },
-  cognitive: { label: 'Cognitive', color: 'text-purple-400' },
-  autonomous: { label: 'Autonomous', color: 'text-emerald-400' },
-  sentient: { label: 'Sentient', color: 'text-aws-orange' },
+const ORGANISM_LEVELS: Record<string, { label: string; color: 'blue' | 'green' | 'grey' | 'red' }> = {
+  reactive: { label: 'Reactive', color: 'grey' }, adaptive: { label: 'Adaptive', color: 'blue' },
+  cognitive: { label: 'Cognitive', color: 'blue' }, autonomous: { label: 'Autonomous', color: 'green' }, sentient: { label: 'Sentient', color: 'red' },
 };
 
-export const BrainSimCard: React.FC<BrainSimCardProps> = ({
-  fidelity_trend,
-  emulation_ratio_percent,
-  organism_level,
-  memory_wall_detected,
-  transparency_score,
-  reasoning_divergence_avg,
-  execution_mode,
-  heartbeat_cycles,
-}) => {
+export const BrainSimCard: React.FC<BrainSimCardProps> = ({ fidelity_trend, emulation_ratio_percent, organism_level, memory_wall_detected, transparency_score, execution_mode, heartbeat_cycles }) => {
   const hasData = fidelity_trend || emulation_ratio_percent !== undefined || organism_level;
-
   if (!hasData) {
-    return (
-      <div className="h-full bento-card flex flex-col items-center justify-center transition-colors duration-300">
-        <Brain className="w-12 h-12 text-slate-700 mb-4" aria-hidden="true" />
-        <p className="text-sm font-medium text-dynamic mb-1">Brain Simulation</p>
-        <p className="text-[10px] text-secondary-dynamic font-mono uppercase tracking-widest">
-          No simulation data
-        </p>
-      </div>
-    );
+    return (<Container header={<Header variant="h3">Brain Simulation</Header>}><Box textAlign="center" padding="l" color="inherit"><StatusIndicator type="pending">No simulation data</StatusIndicator></Box></Container>);
   }
-
   const levelConfig = ORGANISM_LEVELS[organism_level || ''] || ORGANISM_LEVELS.reactive;
   const latestFidelity = fidelity_trend && fidelity_trend.length > 0 ? fidelity_trend[fidelity_trend.length - 1] : null;
 
   return (
-    <div className="h-full bento-card flex flex-col transition-colors duration-300">
-      {/* Header */}
-      <div className="flex justify-between items-start mb-4">
-        <div className="flex items-center gap-2">
-          <Brain className="w-4 h-4 text-aws-orange" aria-hidden="true" />
-          <h2 className="text-sm font-bold text-secondary-dynamic uppercase tracking-widest">
-            Brain Simulation
-          </h2>
-        </div>
-        {memory_wall_detected && (
-          <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-red-500/10 border border-red-500/20">
-            <AlertTriangle className="w-3 h-3 text-red-400" aria-hidden="true" />
-            <span className="text-[8px] font-bold text-red-400 uppercase">Memory Wall</span>
-          </div>
-        )}
-      </div>
-
-      {/* Organism level */}
-      {organism_level && (
-        <div className="mb-4 pb-4 border-b border-border-main">
-          <p className="text-[9px] text-secondary-dynamic uppercase mb-1">Organism Level</p>
-          <p className={`text-lg font-mono font-bold ${levelConfig.color}`}>{levelConfig.label}</p>
-        </div>
-      )}
-
-      {/* Metrics row */}
-      <div className="grid grid-cols-2 gap-4 mb-4">
-        {emulation_ratio_percent !== undefined && (
-          <div>
-            <p className="text-[9px] text-secondary-dynamic uppercase mb-1">Emulation Ratio</p>
-            <p className="text-xl font-mono font-bold text-dynamic">{emulation_ratio_percent.toFixed(1)}%</p>
-          </div>
-        )}
-        {latestFidelity !== null && (
-          <div>
-            <p className="text-[9px] text-secondary-dynamic uppercase mb-1">Fidelity</p>
-            <div className="flex items-baseline gap-1">
-              <p className="text-xl font-mono font-bold text-dynamic">{latestFidelity.toFixed(2)}</p>
-              <TrendingUp className="w-3 h-3 text-emerald-400" aria-hidden="true" />
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Transparency metrics (Synapse 6) */}
-      {(transparency_score !== undefined || execution_mode) && (
-        <div className="grid grid-cols-2 gap-4 mb-4 pt-3 border-t border-border-main">
-          {transparency_score !== undefined && (
-            <div>
-              <p className="text-[9px] text-secondary-dynamic uppercase mb-1">Transparency</p>
-              <p className={`text-xl font-mono font-bold ${transparency_score >= 0.7 ? 'text-emerald-400' : transparency_score >= 0.4 ? 'text-amber-400' : 'text-red-400'}`}>
-                {(transparency_score * 100).toFixed(0)}%
-              </p>
-            </div>
-          )}
-          {execution_mode === 'heartbeat' && (
-            <div>
-              <p className="text-[9px] text-secondary-dynamic uppercase mb-1">Heartbeat</p>
-              <p className="text-xl font-mono font-bold text-aws-orange">{heartbeat_cycles || 0} cycles</p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Sparkline */}
-      {fidelity_trend && fidelity_trend.length > 1 && (
-        <div className="flex-1 flex flex-col">
-          <p className="text-[9px] text-secondary-dynamic uppercase mb-2">Fidelity Trend</p>
-          <div className="flex-1 flex items-center justify-center bg-black/5 dark:bg-white/5 rounded-lg p-3">
-            <Sparkline data={fidelity_trend} width={160} height={40} />
-          </div>
-        </div>
-      )}
-
-      {/* Footer */}
-      <div className="mt-3 pt-3 border-t border-border-main text-[9px] text-secondary-dynamic font-mono">
-        FDE Core Brain emulation metrics
-      </div>
-    </div>
+    <Container
+      header={<Header variant="h3" description="FDE Core Brain emulation" actions={<SpaceBetween direction="horizontal" size="xs">{organism_level && <Badge color={levelConfig.color}>{levelConfig.label}</Badge>}{memory_wall_detected && <Badge color="red">Memory Wall</Badge>}</SpaceBetween>}>Brain Simulation</Header>}
+      footer={<Box fontSize="body-s" color="text-body-secondary">FDE Core Brain emulation metrics</Box>}
+    >
+      <SpaceBetween size="m">
+        <ColumnLayout columns={2} variant="text-grid">
+          {emulation_ratio_percent !== undefined && (<div><Box variant="awsui-key-label">Emulation Ratio</Box><Box variant="awsui-value-large">{emulation_ratio_percent.toFixed(1)}%</Box></div>)}
+          {latestFidelity !== null && (<div><Box variant="awsui-key-label">Fidelity</Box><Box variant="awsui-value-large">{latestFidelity.toFixed(2)}</Box></div>)}
+          {transparency_score !== undefined && (<div><Box variant="awsui-key-label">Transparency</Box><StatusIndicator type={transparency_score >= 0.7 ? 'success' : transparency_score >= 0.4 ? 'warning' : 'error'}>{(transparency_score * 100).toFixed(0)}%</StatusIndicator></div>)}
+          {execution_mode === 'heartbeat' && (<div><Box variant="awsui-key-label">Heartbeat Cycles</Box><Box variant="awsui-value-large">{heartbeat_cycles || 0}</Box></div>)}
+        </ColumnLayout>
+        {fidelity_trend && fidelity_trend.length > 1 && (<div><Box fontSize="body-s" color="text-body-secondary" margin={{ bottom: 'xs' }}>Fidelity Trend</Box><div style={{ padding: '12px', borderRadius: '8px', background: 'var(--color-background-layout-main, #0f1b2a)' }}><Sparkline data={fidelity_trend} width={160} height={40} /></div></div>)}
+      </SpaceBetween>
+    </Container>
   );
 };

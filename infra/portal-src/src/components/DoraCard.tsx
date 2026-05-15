@@ -1,6 +1,18 @@
+/**
+ * DoraCard — DORA Metrics using Cloudscape Container + ColumnLayout.
+ *
+ * Migrated from Tailwind bento-card to Cloudscape Dashboard Item pattern.
+ * Follows: https://cloudscape.design/patterns/general/service-dashboard/dashboard-items/
+ */
 import React from 'react';
-import { motion } from 'motion/react';
-import { BarChart3, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+
+import Container from '@cloudscape-design/components/container';
+import Header from '@cloudscape-design/components/header';
+import ColumnLayout from '@cloudscape-design/components/column-layout';
+import Box from '@cloudscape-design/components/box';
+import StatusIndicator from '@cloudscape-design/components/status-indicator';
+import SegmentedControl from '@cloudscape-design/components/segmented-control';
+import SpaceBetween from '@cloudscape-design/components/space-between';
 
 interface DoraMetricSet {
   lead_time_hours: number;
@@ -29,148 +41,104 @@ const LEVEL_LABELS: Record<string, string> = {
   L4_adaptive: 'L4 Adaptive',
 };
 
-const TrendIcon: React.FC<{ trend: 'up' | 'down' | 'flat'; positive?: boolean }> = ({ trend, positive = true }) => {
-  if (trend === 'up') {
-    return <TrendingUp className={`w-3 h-3 ${positive ? 'text-emerald-400' : 'text-red-400'}`} aria-hidden="true" />;
-  }
-  if (trend === 'down') {
-    return <TrendingDown className={`w-3 h-3 ${positive ? 'text-red-400' : 'text-emerald-400'}`} aria-hidden="true" />;
-  }
-  return <Minus className="w-3 h-3 text-slate-400" aria-hidden="true" />;
-};
-
-const MetricTile: React.FC<{
-  label: string;
-  value: string;
-  trend: 'up' | 'down' | 'flat';
-  positiveIsUp?: boolean;
-}> = ({ label, value, trend, positiveIsUp = true }) => (
-  <div className="p-3 rounded-lg bg-black/5 dark:bg-white/5 border border-border-main">
-    <div className="flex justify-between items-start mb-1">
-      <p className="text-[9px] text-secondary-dynamic uppercase font-medium">{label}</p>
-      <TrendIcon trend={trend} positive={positiveIsUp ? trend === 'up' : trend === 'down'} />
-    </div>
-    <p className="text-lg font-mono font-bold text-dynamic">{value}</p>
-  </div>
-);
+function getTrendIndicator(trend: 'up' | 'down' | 'flat', positiveIsUp: boolean): 'success' | 'error' | 'stopped' {
+  if (trend === 'flat') return 'stopped';
+  if (positiveIsUp) return trend === 'up' ? 'success' : 'error';
+  return trend === 'down' ? 'success' : 'error';
+}
 
 export const DoraCard: React.FC<DoraCardProps> = ({ metrics, selectedLevel, onLevelChange }) => {
-  // Determine the API-detected level from the metrics (find the level with real trend, not 'flat')
   const detectedLevel = React.useMemo(() => {
     if (!metrics?.by_level) return LEVELS[0];
-    // The active level from the API has a non-flat trend (set by mapDoraMetrics)
     const realLevel = Object.entries(metrics.by_level).find(
       ([_, m]) => (m as DoraMetricSet).trend !== 'flat'
     );
     return realLevel ? realLevel[0] : LEVELS[0];
   }, [metrics]);
 
-  // Internal state for uncontrolled mode (when parent doesn't manage selection)
   const [internalLevel, setInternalLevel] = React.useState<string>(detectedLevel);
 
-  // Update internal state when detected level changes (new API data)
   React.useEffect(() => {
-    if (!selectedLevel) {
-      setInternalLevel(detectedLevel);
-    }
+    if (!selectedLevel) setInternalLevel(detectedLevel);
   }, [detectedLevel, selectedLevel]);
 
   const activeLevel = selectedLevel || internalLevel;
   const handleLevelChange = (level: string) => {
-    if (onLevelChange) {
-      onLevelChange(level);
-    } else {
-      setInternalLevel(level);
-    }
+    if (onLevelChange) onLevelChange(level);
+    else setInternalLevel(level);
   };
 
   if (!metrics || !metrics.by_level) {
     return (
-      <div className="h-full bento-card flex flex-col items-center justify-center transition-colors duration-300">
-        <BarChart3 className="w-12 h-12 text-slate-700 mb-4" aria-hidden="true" />
-        <p className="text-sm font-medium text-dynamic mb-1">DORA Metrics</p>
-        <p className="text-[10px] text-secondary-dynamic font-mono uppercase tracking-widest">
-          No metrics available
-        </p>
-      </div>
+      <Container header={<Header variant="h3">DORA Metrics</Header>}>
+        <Box textAlign="center" padding="l" color="inherit">
+          <StatusIndicator type="pending">No metrics available</StatusIndicator>
+        </Box>
+      </Container>
     );
   }
 
   const currentMetrics = metrics.by_level[activeLevel];
+  const availableLevels = LEVELS.filter((l) => metrics.by_level[l]);
 
   return (
-    <div className="h-full bento-card flex flex-col transition-colors duration-300">
-      {/* Header */}
-      <div className="flex justify-between items-center mb-4">
-        <div className="flex items-center gap-2">
-          <BarChart3 className="w-4 h-4 text-aws-orange" aria-hidden="true" />
-          <h2 className="text-sm font-bold text-secondary-dynamic uppercase tracking-widest">
-            DORA Metrics
-          </h2>
-        </div>
-      </div>
+    <Container
+      header={<Header variant="h3" description="DevOps Research and Assessment">DORA Metrics</Header>}
+      footer={
+        <Box fontSize="body-s" color="text-body-secondary">
+          Filtered by autonomy level: {LEVEL_LABELS[activeLevel] || activeLevel}
+        </Box>
+      }
+    >
+      <SpaceBetween size="m">
+        {/* Level selector */}
+        <SegmentedControl
+          selectedId={activeLevel}
+          onChange={({ detail }) => handleLevelChange(detail.selectedId)}
+          options={availableLevels.map((level) => ({
+            id: level,
+            text: LEVEL_LABELS[level] || level,
+          }))}
+        />
 
-      {/* Level selector */}
-      <div className="flex gap-1 mb-4 p-1 rounded-lg bg-black/5 dark:bg-white/5">
-        {LEVELS.filter((l) => metrics.by_level[l]).map((level) => (
-          <button
-            key={level}
-            onClick={() => handleLevelChange(level)}
-            className={`flex-1 px-2 py-1 rounded text-[9px] font-mono font-bold uppercase transition-all ${
-              activeLevel === level
-                ? 'bg-aws-orange text-white'
-                : 'text-secondary-dynamic hover:text-dynamic'
-            }`}
-          >
-            {LEVEL_LABELS[level] || level}
-          </button>
-        ))}
-      </div>
-
-      {/* Metrics grid */}
-      {currentMetrics ? (
-        <motion.div
-          key={activeLevel}
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.2 }}
-          className="grid grid-cols-2 gap-3 flex-1"
-        >
-          <MetricTile
-            label="Lead Time"
-            value={`${currentMetrics.lead_time_hours.toFixed(1)}h`}
-            trend={currentMetrics.trend}
-            positiveIsUp={false}
-          />
-          <MetricTile
-            label="Deploy Freq"
-            value={`${currentMetrics.deploy_freq_per_day.toFixed(1)}/d`}
-            trend={currentMetrics.trend}
-            positiveIsUp={true}
-          />
-          <MetricTile
-            label="CFR"
-            value={`${currentMetrics.change_failure_rate_pct.toFixed(1)}%`}
-            trend={currentMetrics.trend}
-            positiveIsUp={false}
-          />
-          <MetricTile
-            label="MTTR"
-            value={`${currentMetrics.mttr_hours.toFixed(1)}h`}
-            trend={currentMetrics.trend}
-            positiveIsUp={false}
-          />
-        </motion.div>
-      ) : (
-        <div className="flex-1 flex items-center justify-center">
-          <p className="text-xs text-secondary-dynamic">No data for this level</p>
-        </div>
-      )}
-
-      {/* Footer */}
-      <div className="mt-3 pt-3 border-t border-border-main text-[9px] text-secondary-dynamic font-mono">
-        Filtered by autonomy level: {LEVEL_LABELS[activeLevel] || activeLevel}
-      </div>
-    </div>
+        {/* Metrics grid */}
+        {currentMetrics ? (
+          <ColumnLayout columns={2} variant="text-grid">
+            <div>
+              <Box variant="awsui-key-label">Lead Time</Box>
+              <SpaceBetween direction="horizontal" size="xs" alignItems="center">
+                <Box variant="awsui-value-large">{currentMetrics.lead_time_hours.toFixed(1)}h</Box>
+                <StatusIndicator type={getTrendIndicator(currentMetrics.trend, false)} />
+              </SpaceBetween>
+            </div>
+            <div>
+              <Box variant="awsui-key-label">Deploy Freq</Box>
+              <SpaceBetween direction="horizontal" size="xs" alignItems="center">
+                <Box variant="awsui-value-large">{currentMetrics.deploy_freq_per_day.toFixed(1)}/d</Box>
+                <StatusIndicator type={getTrendIndicator(currentMetrics.trend, true)} />
+              </SpaceBetween>
+            </div>
+            <div>
+              <Box variant="awsui-key-label">CFR</Box>
+              <SpaceBetween direction="horizontal" size="xs" alignItems="center">
+                <Box variant="awsui-value-large">{currentMetrics.change_failure_rate_pct.toFixed(1)}%</Box>
+                <StatusIndicator type={getTrendIndicator(currentMetrics.trend, false)} />
+              </SpaceBetween>
+            </div>
+            <div>
+              <Box variant="awsui-key-label">MTTR</Box>
+              <SpaceBetween direction="horizontal" size="xs" alignItems="center">
+                <Box variant="awsui-value-large">{currentMetrics.mttr_hours.toFixed(1)}h</Box>
+                <StatusIndicator type={getTrendIndicator(currentMetrics.trend, false)} />
+              </SpaceBetween>
+            </div>
+          </ColumnLayout>
+        ) : (
+          <Box textAlign="center" color="inherit">
+            <StatusIndicator type="pending">No data for this level</StatusIndicator>
+          </Box>
+        )}
+      </SpaceBetween>
+    </Container>
   );
 };

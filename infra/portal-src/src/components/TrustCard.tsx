@@ -1,5 +1,16 @@
+/**
+ * TrustCard — Trust Score using Cloudscape Container + ColumnLayout.
+ * Keeps the SVG CircularProgress visualization (no Cloudscape equivalent).
+ */
 import React from 'react';
-import { Shield, TrendingUp } from 'lucide-react';
+
+import Container from '@cloudscape-design/components/container';
+import Header from '@cloudscape-design/components/header';
+import Box from '@cloudscape-design/components/box';
+import SpaceBetween from '@cloudscape-design/components/space-between';
+import StatusIndicator from '@cloudscape-design/components/status-indicator';
+import ColumnLayout from '@cloudscape-design/components/column-layout';
+import KeyValuePairs from '@cloudscape-design/components/key-value-pairs';
 
 interface TrustSnapshot {
   pr_acceptance_rate: number;
@@ -23,38 +34,17 @@ const CircularProgress: React.FC<{
   const offset = circumference - (value / 100) * circumference;
 
   return (
-    <div className="flex flex-col items-center">
-      <div className="relative">
-        <svg width={size} height={size} className="-rotate-90">
-          {/* Background circle */}
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={strokeWidth}
-            className="text-slate-200 dark:text-slate-800"
-          />
-          {/* Progress circle */}
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
-            fill="none"
-            stroke={color}
-            strokeWidth={strokeWidth}
-            strokeDasharray={circumference}
-            strokeDashoffset={offset}
-            strokeLinecap="round"
-            className="transition-all duration-700 ease-out"
-          />
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+      <div style={{ position: 'relative' }}>
+        <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
+          <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="var(--color-border-divider-default, #414d5c)" strokeWidth={strokeWidth} />
+          <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={color} strokeWidth={strokeWidth} strokeDasharray={circumference} strokeDashoffset={offset} strokeLinecap="round" style={{ transition: 'stroke-dashoffset 0.7s ease-out' }} />
         </svg>
-        <div className="absolute inset-0 flex items-center justify-center">
-          <span className="text-sm font-mono font-bold text-dynamic">{value.toFixed(0)}%</span>
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Box variant="code" fontSize="body-s" fontWeight="bold">{value.toFixed(0)}%</Box>
         </div>
       </div>
-      <p className="text-[9px] text-secondary-dynamic uppercase mt-1.5 text-center font-medium">{label}</p>
+      <Box fontSize="body-s" color="text-body-secondary" margin={{ top: 'xxs' }}>{label}</Box>
     </div>
   );
 };
@@ -62,88 +52,47 @@ const CircularProgress: React.FC<{
 export const TrustCard: React.FC<TrustCardProps> = ({ snapshot }) => {
   if (!snapshot) {
     return (
-      <div className="h-full bento-card flex flex-col items-center justify-center transition-colors duration-300">
-        <Shield className="w-12 h-12 text-slate-700 mb-4" aria-hidden="true" />
-        <p className="text-sm font-medium text-dynamic mb-1">Trust Score</p>
-        <p className="text-[10px] text-secondary-dynamic font-mono uppercase tracking-widest">
-          No trust data
-        </p>
-      </div>
+      <Container header={<Header variant="h3">Trust Score</Header>}>
+        <Box textAlign="center" padding="l" color="inherit">
+          <StatusIndicator type="pending">No trust data</StatusIndicator>
+        </Box>
+      </Container>
     );
   }
 
-  const trustColor =
-    snapshot.trust_score_composite >= 80
-      ? 'rgb(52, 211, 153)'
-      : snapshot.trust_score_composite >= 60
-        ? 'rgb(251, 191, 36)'
-        : 'rgb(248, 113, 113)';
-
-  const trustTextColor =
-    snapshot.trust_score_composite >= 80
-      ? 'text-emerald-400'
-      : snapshot.trust_score_composite >= 60
-        ? 'text-amber-400'
-        : 'text-red-400';
+  const trustColor = snapshot.trust_score_composite >= 80 ? 'rgb(52, 211, 153)' : snapshot.trust_score_composite >= 60 ? 'rgb(251, 191, 36)' : 'rgb(248, 113, 113)';
+  const trustStatus: 'success' | 'warning' | 'error' = snapshot.trust_score_composite >= 80 ? 'success' : snapshot.trust_score_composite >= 60 ? 'warning' : 'error';
 
   return (
-    <div className="h-full bento-card flex flex-col transition-colors duration-300">
-      {/* Header */}
-      <div className="flex justify-between items-start mb-4">
-        <div className="flex items-center gap-2">
-          <Shield className="w-4 h-4 text-aws-orange" aria-hidden="true" />
-          <h2 className="text-sm font-bold text-secondary-dynamic uppercase tracking-widest">
-            Trust Score
-          </h2>
-        </div>
-        <div className="flex items-center gap-1">
-          <TrendingUp className={`w-3 h-3 ${trustTextColor}`} aria-hidden="true" />
-          <span className={`text-xs font-mono font-bold ${trustTextColor}`}>
-            {snapshot.trust_score_composite.toFixed(0)}
-          </span>
-        </div>
-      </div>
+    <Container
+      header={
+        <Header variant="h3" description="Human-AI trust calibration">
+          Trust Score
+        </Header>
+      }
+      footer={
+        <Box fontSize="body-s" color="text-body-secondary">
+          Override rate: {snapshot.gate_override_rate.toFixed(1)}%
+          {snapshot.gate_override_rate > 20 && ' ⚠️'}
+        </Box>
+      }
+    >
+      <SpaceBetween size="m">
+        {/* Composite score */}
+        <Box textAlign="center">
+          <CircularProgress value={snapshot.trust_score_composite} label="Composite Trust" color={trustColor} size={96} />
+        </Box>
 
-      {/* Composite trust score - large */}
-      <div className="flex justify-center mb-6">
-        <CircularProgress
-          value={snapshot.trust_score_composite}
-          label="Composite Trust"
-          color={trustColor}
-          size={96}
-        />
-      </div>
-
-      {/* Individual metrics */}
-      <div className="flex justify-around flex-1">
-        <CircularProgress
-          value={snapshot.pr_acceptance_rate}
-          label="PR Accept"
-          color="rgb(52, 211, 153)"
-          size={64}
-        />
-        <CircularProgress
-          value={100 - snapshot.gate_override_rate}
-          label="Gate Compliance"
-          color="rgb(96, 165, 250)"
-          size={64}
-        />
-      </div>
-
-      {/* Override rate callout */}
-      <div className="mt-4 p-2 rounded-lg bg-black/5 dark:bg-white/5 border border-border-main">
-        <div className="flex justify-between items-center">
-          <span className="text-[9px] text-secondary-dynamic uppercase">Override Rate</span>
-          <span className={`text-[10px] font-mono font-bold ${snapshot.gate_override_rate > 20 ? 'text-red-400' : 'text-secondary-dynamic'}`}>
-            {snapshot.gate_override_rate.toFixed(1)}%
-          </span>
-        </div>
-      </div>
-
-      {/* Footer */}
-      <div className="mt-3 pt-3 border-t border-border-main text-[9px] text-secondary-dynamic font-mono">
-        Human-AI trust calibration
-      </div>
-    </div>
+        {/* Individual metrics */}
+        <ColumnLayout columns={2} variant="text-grid">
+          <div style={{ textAlign: 'center' }}>
+            <CircularProgress value={snapshot.pr_acceptance_rate} label="PR Accept" color="rgb(52, 211, 153)" size={64} />
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <CircularProgress value={100 - snapshot.gate_override_rate} label="Gate Compliance" color="rgb(96, 165, 250)" size={64} />
+          </div>
+        </ColumnLayout>
+      </SpaceBetween>
+    </Container>
   );
 };

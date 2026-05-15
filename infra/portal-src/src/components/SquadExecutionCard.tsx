@@ -1,6 +1,15 @@
+/**
+ * SquadExecutionCard — Squad agent execution using Cloudscape Container + ProgressBar.
+ */
 import React from 'react';
-import { motion } from 'motion/react';
-import { Users, Loader2, CheckCircle2, XCircle, Clock, Pause } from 'lucide-react';
+
+import Container from '@cloudscape-design/components/container';
+import Header from '@cloudscape-design/components/header';
+import Box from '@cloudscape-design/components/box';
+import SpaceBetween from '@cloudscape-design/components/space-between';
+import StatusIndicator from '@cloudscape-design/components/status-indicator';
+import ProgressBar from '@cloudscape-design/components/progress-bar';
+import Badge from '@cloudscape-design/components/badge';
 
 interface AgentExecution {
   role: string;
@@ -14,20 +23,24 @@ interface SquadExecutionCardProps {
   agents?: AgentExecution[] | null;
 }
 
-const STATUS_CONFIG = {
-  running: { icon: Loader2, color: 'text-aws-orange', bg: 'bg-aws-orange', barBg: 'bg-aws-orange/20', animate: true },
-  complete: { icon: CheckCircle2, color: 'text-emerald-400', bg: 'bg-emerald-500', barBg: 'bg-emerald-500/20', animate: false },
-  error: { icon: XCircle, color: 'text-red-400', bg: 'bg-red-500', barBg: 'bg-red-500/20', animate: false },
-  waiting: { icon: Clock, color: 'text-slate-400', bg: 'bg-slate-500', barBg: 'bg-slate-500/20', animate: false },
-  paused: { icon: Pause, color: 'text-amber-400', bg: 'bg-amber-500', barBg: 'bg-amber-500/20', animate: false },
-};
+function mapAgentStatus(status: string): 'success' | 'error' | 'in-progress' | 'pending' | 'stopped' {
+  switch (status) {
+    case 'running': return 'in-progress';
+    case 'complete': return 'success';
+    case 'error': return 'error';
+    case 'waiting': return 'pending';
+    default: return 'stopped';
+  }
+}
 
-const TIER_BADGES: Record<string, string> = {
-  frontier: 'bg-purple-500/20 text-purple-400',
-  standard: 'bg-sky-500/20 text-sky-400',
-  fast: 'bg-emerald-500/20 text-emerald-400',
-  mini: 'bg-slate-500/20 text-slate-400',
-};
+function getTierBadgeColor(tier: string): 'blue' | 'green' | 'grey' | 'red' {
+  switch (tier) {
+    case 'frontier': return 'red';
+    case 'standard': return 'blue';
+    case 'fast': return 'green';
+    default: return 'grey';
+  }
+}
 
 const formatDuration = (seconds: number): string => {
   if (seconds < 60) return `${seconds}s`;
@@ -38,13 +51,11 @@ const formatDuration = (seconds: number): string => {
 export const SquadExecutionCard: React.FC<SquadExecutionCardProps> = ({ agents }) => {
   if (!agents || agents.length === 0) {
     return (
-      <div className="h-full bento-card flex flex-col items-center justify-center transition-colors duration-300">
-        <Users className="w-12 h-12 text-slate-700 mb-4" aria-hidden="true" />
-        <p className="text-sm font-medium text-dynamic mb-1">Squad Execution</p>
-        <p className="text-[10px] text-secondary-dynamic font-mono uppercase tracking-widest">
-          No active agents
-        </p>
-      </div>
+      <Container header={<Header variant="h3">Squad Execution</Header>}>
+        <Box textAlign="center" padding="l" color="inherit">
+          <StatusIndicator type="pending">No active agents</StatusIndicator>
+        </Box>
+      </Container>
     );
   }
 
@@ -53,74 +64,42 @@ export const SquadExecutionCard: React.FC<SquadExecutionCardProps> = ({ agents }
   const maxDuration = Math.max(...agents.map((a) => a.duration_seconds), 1);
 
   return (
-    <div className="h-full bento-card flex flex-col transition-colors duration-300">
-      {/* Header */}
-      <div className="flex justify-between items-start mb-4">
-        <div className="flex items-center gap-2">
-          <Users className="w-4 h-4 text-aws-orange" aria-hidden="true" />
-          <h2 className="text-sm font-bold text-secondary-dynamic uppercase tracking-widest">
-            Squad Execution
-          </h2>
-        </div>
-        <div className="flex items-center gap-2">
-          {runningCount > 0 && (
-            <div className="flex items-center gap-1">
-              <div className="w-2 h-2 rounded-full bg-aws-orange animate-pulse" />
-              <span className="text-[9px] font-mono text-aws-orange">{runningCount} active</span>
-            </div>
-          )}
-          <span className="text-[9px] font-mono text-secondary-dynamic">
-            {completeCount}/{agents.length} done
-          </span>
-        </div>
-      </div>
-
-      {/* Agent list */}
-      <div className="flex-1 overflow-y-auto pr-2 scrollbar-thin space-y-3">
+    <Container
+      header={
+        <Header
+          variant="h3"
+          counter={`(${agents.length})`}
+          description={`${runningCount} active • ${completeCount}/${agents.length} done`}
+        >
+          Squad Execution
+        </Header>
+      }
+      footer={
+        <Box fontSize="body-s" color="text-body-secondary">
+          {agents.length} agents in squad
+        </Box>
+      }
+    >
+      <SpaceBetween size="s">
         {agents.map((agent, idx) => {
-          const config = STATUS_CONFIG[agent.status] || STATUS_CONFIG.waiting;
-          const Icon = config.icon;
           const progressPercent = agent.status === 'complete' ? 100 : (agent.duration_seconds / maxDuration) * 80;
-
           return (
-            <div key={`${agent.role}-${idx}`} className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Icon
-                    className={`w-3.5 h-3.5 ${config.color} ${config.animate ? 'animate-spin' : ''}`}
-                    aria-hidden="true"
-                  />
-                  <span className="text-[10px] font-medium text-dynamic">{agent.role}</span>
-                  <span className={`text-[8px] font-mono px-1.5 py-0.5 rounded ${TIER_BADGES[agent.model_tier] || TIER_BADGES.standard}`}>
-                    {agent.model_tier}
-                  </span>
-                </div>
-                <span className="text-[9px] font-mono text-secondary-dynamic">
-                  {formatDuration(agent.duration_seconds)}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="flex-1 h-1.5 bg-black/5 dark:bg-white/5 rounded-full overflow-hidden">
-                  <motion.div
-                    initial={{ width: 0 }}
-                    animate={{ width: `${progressPercent}%` }}
-                    transition={{ duration: 0.6, ease: 'easeOut' }}
-                    className={`h-full ${config.bg} rounded-full ${agent.status === 'running' ? 'animate-pulse' : ''}`}
-                  />
-                </div>
-                <span className="text-[8px] font-mono text-secondary-dynamic truncate max-w-[80px]">
-                  {agent.stage}
-                </span>
-              </div>
+            <div key={`${agent.role}-${idx}`}>
+              <SpaceBetween direction="horizontal" size="xs" alignItems="center">
+                <StatusIndicator type={mapAgentStatus(agent.status)}>{agent.role}</StatusIndicator>
+                <Badge color={getTierBadgeColor(agent.model_tier)}>{agent.model_tier}</Badge>
+                <Box fontSize="body-s" color="text-body-secondary">{formatDuration(agent.duration_seconds)}</Box>
+              </SpaceBetween>
+              <ProgressBar
+                value={progressPercent}
+                variant="standalone"
+                additionalInfo={agent.stage}
+                status={agent.status === 'error' ? 'error' : agent.status === 'running' ? 'in-progress' : undefined}
+              />
             </div>
           );
         })}
-      </div>
-
-      {/* Footer */}
-      <div className="mt-3 pt-3 border-t border-border-main text-[9px] text-secondary-dynamic font-mono">
-        {agents.length} agents in squad
-      </div>
-    </div>
+      </SpaceBetween>
+    </Container>
   );
 };

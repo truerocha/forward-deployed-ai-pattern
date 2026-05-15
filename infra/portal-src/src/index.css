@@ -1,204 +1,42 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/**
+ * Portal Global Styles — Cloudscape + AWS Branding Overrides
+ *
+ * Cloudscape provides its own design tokens via @cloudscape-design/global-styles.
+ * This file contains only:
+ * 1. AWS branding accent overrides (orange highlight)
+ * 2. TopNavigation positioning fix
+ * 3. Minimal custom scrollbar styling
+ */
 
+/* ─── Required: Full-height layout for Cloudscape AppLayout ──────────────── */
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+/* ─── Smooth Theme Transition (prevents flash when toggling dark/light) ──── */
+body {
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+body * {
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.15s ease;
+}
+
+/* ─── TopNavigation Fixed Header ─────────────────────────────────────────── */
+#top-nav {
+  position: sticky;
+  top: 0;
+  z-index: 1002;
+}
+
+/* ─── AWS Branding Accent ─────────────────────────────────────────────────── */
 :root {
-  --bg-main: #0e1116;
-  --bg-card: #16191f;
-  --bg-surface: rgba(255, 255, 255, 0.03);
-  --text-main: #e2e8f0;
-  --text-secondary: #94a3b8;
-  --text-tertiary: #64748b;
-  --border-color: rgba(255, 255, 255, 0.1);
-  --border-card: rgba(255, 255, 255, 0.08);
-  --shadow-card: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.2);
-  --accent-bg: rgba(255, 153, 0, 0.08);
-  --accent-border: rgba(255, 153, 0, 0.3);
-  --surface-hover: rgba(255, 255, 255, 0.05);
-  --surface-active: rgba(255, 255, 255, 0.08);
-  --badge-bg: rgba(255, 255, 255, 0.06);
+  --app-color-accent: #FF9900;
 }
 
-[data-theme="light"] {
-  --bg-main: #f8fafc;
-  --bg-card: #ffffff;
-  --bg-surface: rgba(15, 23, 42, 0.05);
-  --text-main: #0f172a;
-  --text-secondary: #334155;
-  --text-tertiary: #475569;
-  --border-color: rgba(15, 23, 42, 0.18);
-  --border-card: rgba(15, 23, 42, 0.12);
-  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.1), 0 4px 12px rgba(0, 0, 0, 0.06);
-  --accent-bg: rgba(255, 153, 0, 0.08);
-  --accent-border: rgba(255, 153, 0, 0.5);
-  --surface-hover: rgba(15, 23, 42, 0.06);
-  --surface-active: rgba(15, 23, 42, 0.10);
-  --badge-bg: rgba(15, 23, 42, 0.07);
-}
-
-/* Light mode structural overrides */
-[data-theme="light"] .rail-item:hover {
-  background-color: var(--surface-hover);
-}
-
-[data-theme="light"] .rail-icon {
-  color: #334155;
-}
-
-[data-theme="light"] .rail-label {
-  color: #475569;
-}
-
-[data-theme="light"] .bento-card {
-  box-shadow: var(--shadow-card);
-  border-color: var(--border-card);
-}
-
-[data-theme="light"] ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-}
-
-[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
-}
-
-/* Resolve dark: prefix classes in light mode (Tailwind dark: doesn't fire with data-theme) */
-[data-theme="light"] .dark\:bg-white\/5,
-[data-theme="light"] .dark\:bg-white\/10 {
-  background-color: var(--bg-surface);
-}
-[data-theme="light"] .dark\:hover\:bg-white\/10:hover {
-  background-color: var(--surface-active);
-}
-[data-theme="light"] .dark\:bg-black\/30 {
-  background-color: var(--bg-surface);
-}
-[data-theme="light"] .dark\:text-slate-700 {
-  color: #334155;
-}
-[data-theme="light"] .dark\:text-slate-800 {
-  color: #1e293b;
-}
-
-/* Light mode text contrast fixes — ensure all slate text is readable */
-[data-theme="light"] .text-slate-400 {
-  color: #64748b;
-}
-[data-theme="light"] .text-slate-500 {
-  color: #475569;
-}
-[data-theme="light"] .text-slate-600 {
-  color: #334155;
-}
-[data-theme="light"] .text-slate-700 {
-  color: #1e293b;
-}
-
-@layer base {
-  *:focus-visible {
-    @apply outline-2 outline-offset-2 outline-[#FF9900];
-  }
-  body {
-    background-color: var(--bg-main);
-    color: var(--text-main);
-    font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
-    @apply antialiased overflow-hidden transition-colors duration-300;
-  }
-}
-
-@layer components {
-  .bg-bg-main {
-    background-color: var(--bg-main);
-  }
-
-  .bg-bg-card {
-    background-color: var(--bg-card);
-  }
-
-  .bg-surface {
-    background-color: var(--bg-surface);
-  }
-
-  .border-border-main {
-    border-color: var(--border-color);
-  }
-
-  .bento-card {
-    background-color: var(--bg-card);
-    border: 1px solid var(--border-card);
-    box-shadow: var(--shadow-card);
-    @apply rounded-2xl p-5 transition-all duration-300;
-  }
-
-  .bento-card:hover {
-    border-color: var(--accent-border);
-  }
-
-  .text-dynamic {
-    color: var(--text-main);
-  }
-
-  .text-secondary-dynamic {
-    color: var(--text-secondary);
-  }
-
-  .text-tertiary-dynamic {
-    color: var(--text-tertiary);
-  }
-
-  .bg-card-dynamic {
-    background-color: var(--bg-card);
-  }
-
-  .badge-bg {
-    background-color: var(--badge-bg);
-  }
-
-  .rail-item {
-    @apply w-16 h-16 flex flex-col items-center justify-center gap-1 transition-all duration-200 cursor-pointer border-r-2 border-transparent;
-  }
-
-  .rail-item:hover {
-    background-color: var(--surface-hover);
-  }
-
-  .rail-item-active {
-    background-color: var(--accent-bg);
-    border-color: #FF9900;
-    color: #FF9900;
-  }
-
-  .rail-icon {
-    @apply w-5 h-5 transition-colors;
-    color: var(--text-tertiary);
-  }
-
-  .rail-item:hover .rail-icon {
-    color: #FF9900;
-  }
-
-  .rail-item-active .rail-icon {
-    color: #FF9900;
-  }
-
-  .rail-label {
-    font-size: 8px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-tertiary);
-    @apply transition-colors;
-  }
-
-  .rail-item:hover .rail-label {
-    color: #FF9900;
-  }
-
-  .rail-item-active .rail-label {
-    color: #FF9900;
-  }
-}
-
+/* ─── Custom Scrollbar (preserves existing feel) ──────────────────────────── */
 ::-webkit-scrollbar {
   width: 6px;
 }
@@ -208,10 +46,52 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #27272A;
+  background: var(--color-border-control-default, #414d5c);
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #3F3F46;
+  background: var(--color-text-body-secondary, #8d99a8);
+}
+
+/* ─── Focus Visible (AWS Orange ring) ─────────────────────────────────────── */
+*:focus-visible {
+  outline: 2px solid var(--app-color-accent) !important;
+  outline-offset: 2px;
+}
+
+/* ─── Card Components Legacy Support ──────────────────────────────────────── */
+/* Existing card components still use some Tailwind classes during migration.
+   These utility classes provide backward compatibility. */
+.bento-card {
+  background-color: var(--color-background-container-content, #0f1b2a);
+  border: 1px solid var(--color-border-divider-default, #414d5c);
+  border-radius: 16px;
+  padding: 20px;
+  transition: border-color 0.2s;
+}
+
+.bento-card:hover {
+  border-color: var(--app-color-accent);
+}
+
+/* Legacy text utilities for cards not yet migrated */
+.text-dynamic {
+  color: var(--color-text-body-default, #d1d5db);
+}
+
+.text-secondary-dynamic {
+  color: var(--color-text-body-secondary, #8d99a8);
+}
+
+.text-aws-orange {
+  color: var(--app-color-accent);
+}
+
+.bg-bg-card {
+  background-color: var(--color-background-container-content, #0f1b2a);
+}
+
+.border-border-main {
+  border-color: var(--color-border-divider-default, #414d5c);
 }
