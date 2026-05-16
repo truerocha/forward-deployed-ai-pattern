@@ -14,7 +14,7 @@ The bridge enables the Conductor to:
 Design Decisions:
   - The Conductor remains the authority on WHAT to do (squad composition)
   - The A2A orchestrator handles HOW to do it (agent coordination)
-  - The bridge translates between Conductor's WorkflowPlan and A2A's ContextoWorkflow
+  - The bridge translates between Conductor's WorkflowPlan and A2A's WorkflowContext
   - SCD updates flow bidirectionally: Conductor → A2A (input) and A2A → SCD (output)
 
 When to use A2A vs Conductor-direct:
@@ -40,6 +40,11 @@ from src.core.a2a.agent_cards import (
     list_cards,
 )
 from src.core.a2a.contracts import (
+    RawContent,
+    WorkflowContext,
+    ReviewFeedback,
+    FinalReport,
+    # Backward-compatible aliases
     ConteudoBruto,
     ContextoWorkflow,
     FeedbackRevisao,
@@ -167,11 +172,11 @@ class SquadBridge:
         self,
         scd: dict[str, Any],
         task_description: str,
-    ) -> ContextoWorkflow:
-        """Translate a Conductor SCD (Shared Context Document) to A2A ContextoWorkflow.
+    ) -> WorkflowContext:
+        """Translate a Conductor SCD (Shared Context Document) to A2A WorkflowContext.
 
         The SCD is the Conductor's state format (DynamoDB: task_id + section_key).
-        The ContextoWorkflow is the A2A orchestrator's state format.
+        The WorkflowContext is the A2A orchestrator's state format.
 
         This translation enables seamless handoff between execution paths.
 
@@ -181,37 +186,37 @@ class SquadBridge:
             task_description: Human-readable task description.
 
         Returns:
-            ContextoWorkflow ready for A2A orchestrator execution.
+            WorkflowContext ready for A2A orchestrator execution.
         """
         workflow_id = f"wf-{scd.get('task_id', 'unknown')}"
 
-        contexto = ContextoWorkflow(
+        context = WorkflowContext(
             workflow_id=workflow_id,
-            input_usuario=task_description,
+            user_input=task_description,
         )
 
         # If the Conductor already has research data, inject it
         research_section = scd.get("research", {})
         if research_section and research_section.get("fatos_encontrados"):
             try:
-                contexto.dados_pesquisa = ConteudoBruto.model_validate(research_section)
-                contexto.no_atual = "ESCRITA"  # Skip research — already done
+                context.research_data = RawContent.model_validate(research_section)
+                context.current_node = "ENGINEERING"  # Skip research — already done
                 logger.info(
-                    "[%s] SCD contains research data — starting at ESCRITA",
+                    "[%s] SCD contains research data — starting at ENGINEERING",
                     workflow_id,
                 )
             except Exception as e:
                 logger.warning(
-                    "[%s] SCD research data invalid, starting from PESQUISA: %s",
+                    "[%s] SCD research data invalid, starting from RESEARCH: %s",
                     workflow_id, str(e)[:100],
                 )
 
         # Inject constraints from SCD into the context
         constraints = scd.get("constraints", {})
         if constraints:
-            contexto.metricas_execucao["scd_constraints"] = constraints
+            context.execution_metrics["scd_constraints"] = constraints
 
-        return contexto
+        return context
 
     def translate_a2a_result_to_scd(
         self,
@@ -224,7 +229,7 @@ class SquadBridge:
         SCD so downstream Conductor stages can consume it.
 
         Args:
-            result: Execution result from SquadOrchestrator.executar().
+            result: Execution result from SquadOrchestrator.execute().
             task_id: The Conductor's task ID (DynamoDB PK).
 
         Returns:
@@ -234,12 +239,12 @@ class SquadBridge:
         sections: dict[str, dict[str, Any]] = {}
 
         # Write the final report as the "deliverable" section
-        relatorio = result.get("relatorio")
-        if relatorio:
+        report = result.get("relatorio")
+        if report:
             sections["deliverable"] = {
                 "task_id": task_id,
                 "section_key": "deliverable",
-                "data": relatorio,
+                "data": report,
                 "source": "a2a-pipeline",
                 "workflow_id": result.get("workflow_id", ""),
             }
@@ -361,9 +366,9 @@ class SquadBridge:
             Recommended topology: "sequential" | "feedback_loop" | "parallel"
         """
         if has_feedback_requirement or complexity_score >= 0.5:
-            return "feedback_loop"  # Full pesquisa → escrita → revisão → rework
+            return "feedback_loop"  # Full research → engineering → review → rework
         elif complexity_score >= 0.3:
-            return "sequential"  # pesquisa → escrita (no review)
+            return "sequential"  # research → engineering (no review)
         else:
             return "sequential"  # Simple pass-through
 
@@ -401,8 +406,8 @@ def get_a2a_capabilities_for_conductor() -> dict[str, Any]:
             for card in list_cards()
         ],
         "supported_topologies": [
-            "sequential",       # pesquisa → escrita
-            "feedback_loop",    # pesquisa → escrita → revisão → rework (max 3)
+            "sequential",       # research → engineering
+            "feedback_loop",    # research → engineering → review → rework (max 3)
         ],
         "constraints": {
             "max_feedback_iterations": 3,

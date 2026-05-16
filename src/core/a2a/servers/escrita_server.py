@@ -30,13 +30,13 @@ Your role is to produce high-quality technical deliverables from research data.
 
 You MUST return a JSON object conforming to this schema:
 {
-  "titulo": "string — title of the deliverable",
-  "introducao": "string — executive summary",
-  "corpo_analise": "string — main body of analysis or implementation",
-  "conclusao": "string — conclusions and next steps",
-  "referencias": ["string — references used"],
-  "artefatos": [{"path": "string", "content_hash": "", "language": "", "lines_added": 0}],
-  "aprovado": false,
+  "title": "string — title of the deliverable",
+  "introduction": "string — executive summary",
+  "analysis_body": "string — main body of analysis or implementation",
+  "conclusion": "string — conclusions and next steps",
+  "references": ["string — references used"],
+  "artifacts": [{"path": "string", "content_hash": "", "language": "", "lines_added": 0}],
+  "approved": false,
   "metricas": {}
 }
 
@@ -85,11 +85,11 @@ def create_writing_server(
         Configured A2AServer instance (call .serve() to start).
     """
     from src.core.a2a.agent_cards import ESCRITA_CARD
-    from src.core.a2a.observability import inicializar_tracing
+    from src.core.a2a.observability import initialize_tracing
 
     # Initialize distributed tracing (OTel → ADOT → X-Ray)
-    inicializar_tracing(
-        nome_servico="fde-a2a-escrita",
+    initialize_tracing(
+        service_name="fde-a2a-escrita",
         environment=os.environ.get("ENVIRONMENT", "dev"),
     )
 

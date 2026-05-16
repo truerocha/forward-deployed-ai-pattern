@@ -32,7 +32,7 @@ import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
-from src.core.a2a.contracts import ContextoWorkflow
+from src.core.a2a.contracts import WorkflowContext, ContextoWorkflow
 
 logger = logging.getLogger(__name__)
 
@@ -54,8 +54,8 @@ class DynamoDBStateManager:
 
     Usage:
         manager = DynamoDBStateManager()
-        manager.salvar_checkpoint("wf-123", "ESCRITA", contexto)
-        recovered = manager.recuperar_checkpoint("wf-123")
+        manager.save_checkpoint("wf-123", "ENGINEERING", context)
+        recovered = manager.recover_checkpoint("wf-123")
     """
 
     def __init__(
@@ -72,11 +72,11 @@ class DynamoDBStateManager:
         )
         self._table = self._dynamodb.Table(self._table_name)
 
-    def salvar_checkpoint(
+    def save_checkpoint(
         self,
         workflow_id: str,
-        no_atual: str,
-        contexto: ContextoWorkflow,
+        current_node: str,
+        context: WorkflowContext,
         metadata: dict[str, Any] | None = None,
     ) -> bool:
         """Save a workflow checkpoint atomically.
@@ -84,10 +84,12 @@ class DynamoDBStateManager:
         Writes both a node-specific checkpoint and updates the "latest" pointer.
         Uses conditional writes to prevent concurrent overwrites.
 
+        Previously named: salvar_checkpoint (param no_atual → current_node, contexto → context)
+
         Args:
             workflow_id: Unique workflow execution ID.
-            no_atual: Current graph node name (e.g., "PESQUISA", "ESCRITA").
-            contexto: Full workflow context to persist.
+            current_node: Current graph node name (e.g., "RESEARCH", "ENGINEERING").
+            context: Full workflow context to persist.
             metadata: Optional additional metadata (agent_id, duration, etc.).
 
         Returns:
@@ -97,19 +99,19 @@ class DynamoDBStateManager:
         ttl = int(time.time()) + (7 * 24 * 60 * 60)  # 7 days
 
         # Update the context timestamp
-        contexto.updated_at = now
-        contexto.no_atual = no_atual
+        context.updated_at = now
+        context.current_node = current_node
 
-        payload = contexto.model_dump_json()
+        payload = context.model_dump_json()
 
         try:
             # Write node-specific checkpoint
             self._table.put_item(
                 Item={
                     "workflow_id": workflow_id,
-                    "checkpoint_key": f"state#{no_atual}",
+                    "checkpoint_key": f"state#{current_node}",
                     "payload_json": payload,
-                    "node_name": no_atual,
+                    "node_name": current_node,
                     "updated_at": now,
                     "ttl": ttl,
                     "metadata": json.dumps(metadata or {}),
@@ -122,7 +124,7 @@ class DynamoDBStateManager:
                     "workflow_id": workflow_id,
                     "checkpoint_key": "state#latest",
                     "payload_json": payload,
-                    "node_name": no_atual,
+                    "node_name": current_node,
                     "updated_at": now,
                     "ttl": ttl,
                     "metadata": json.dumps(metadata or {}),
@@ -132,7 +134,7 @@ class DynamoDBStateManager:
             logger.info(
                 "Checkpoint saved: workflow=%s node=%s size=%d bytes",
                 workflow_id,
-                no_atual,
+                current_node,
                 len(payload),
             )
             return True
@@ -141,22 +143,35 @@ class DynamoDBStateManager:
             logger.error(
                 "Failed to save checkpoint: workflow=%s node=%s error=%s",
                 workflow_id,
-                no_atual,
+                current_node,
                 e.response["Error"]["Message"],
             )
             return False
 
-    def recuperar_checkpoint(self, workflow_id: str) -> Optional[ContextoWorkflow]:
+    # Backward-compatible alias
+    def salvar_checkpoint(
+        self,
+        workflow_id: str,
+        no_atual: str,
+        contexto: WorkflowContext,
+        metadata: dict[str, Any] | None = None,
+    ) -> bool:
+        """Backward-compatible alias for save_checkpoint."""
+        return self.save_checkpoint(workflow_id, no_atual, contexto, metadata)
+
+    def recover_checkpoint(self, workflow_id: str) -> Optional[WorkflowContext]:
         """Recover the latest checkpoint for a workflow.
 
         Reads the "latest" pointer to find the most recent saved state.
         Returns None if no checkpoint exists (new workflow).
 
+        Previously named: recuperar_checkpoint
+
         Args:
             workflow_id: Unique workflow execution ID.
 
         Returns:
-            Deserialized ContextoWorkflow or None if not found.
+            Deserialized WorkflowContext or None if not found.
         """
         try:
             response = self._table.get_item(
@@ -172,15 +187,15 @@ class DynamoDBStateManager:
                 return None
 
             payload_json = item.get("payload_json", "{}")
-            contexto = ContextoWorkflow.model_validate_json(payload_json)
+            context = WorkflowContext.model_validate_json(payload_json)
 
             logger.info(
                 "Checkpoint recovered: workflow=%s node=%s updated=%s",
                 workflow_id,
-                contexto.no_atual,
-                contexto.updated_at,
+                context.current_node,
+                context.updated_at,
             )
-            return contexto
+            return context
 
         except ClientError as e:
             logger.error(
@@ -197,17 +212,24 @@ class DynamoDBStateManager:
             )
             return None
 
-    def recuperar_checkpoint_por_no(
+    # Backward-compatible alias
+    def recuperar_checkpoint(self, workflow_id: str) -> Optional[WorkflowContext]:
+        """Backward-compatible alias for recover_checkpoint."""
+        return self.recover_checkpoint(workflow_id)
+
+    def recover_checkpoint_by_node(
         self, workflow_id: str, node_name: str
-    ) -> Optional[ContextoWorkflow]:
+    ) -> Optional[WorkflowContext]:
         """Recover a specific node checkpoint (for debugging/replay).
+
+        Previously named: recuperar_checkpoint_por_no
 
         Args:
             workflow_id: Unique workflow execution ID.
-            node_name: Specific node to recover (e.g., "PESQUISA").
+            node_name: Specific node to recover (e.g., "RESEARCH").
 
         Returns:
-            Deserialized ContextoWorkflow at that node, or None.
+            Deserialized WorkflowContext at that node, or None.
         """
         try:
             response = self._table.get_item(
@@ -221,7 +243,7 @@ class DynamoDBStateManager:
             if not item:
                 return None
 
-            return ContextoWorkflow.model_validate_json(item["payload_json"])
+            return WorkflowContext.model_validate_json(item["payload_json"])
 
         except (ClientError, Exception) as e:
             logger.warning(
@@ -232,15 +254,24 @@ class DynamoDBStateManager:
             )
             return None
 
-    def marcar_concluido(self, workflow_id: str, contexto: ContextoWorkflow) -> bool:
+    # Backward-compatible alias
+    def recuperar_checkpoint_por_no(
+        self, workflow_id: str, node_name: str
+    ) -> Optional[WorkflowContext]:
+        """Backward-compatible alias for recover_checkpoint_by_node."""
+        return self.recover_checkpoint_by_node(workflow_id, node_name)
+
+    def mark_completed(self, workflow_id: str, context: WorkflowContext) -> bool:
         """Mark a workflow as completed (terminal state).
 
-        Writes a final checkpoint with node="CONCLUIDO" and sets a shorter TTL
+        Writes a final checkpoint with node="COMPLETED" and sets a shorter TTL
         (30 days for completed workflows vs 7 days for in-progress).
+
+        Previously named: marcar_concluido
 
         Args:
             workflow_id: Unique workflow execution ID.
-            contexto: Final workflow context.
+            context: Final workflow context.
 
         Returns:
             True if marked successfully.
@@ -248,16 +279,16 @@ class DynamoDBStateManager:
         now = datetime.now(timezone.utc).isoformat()
         ttl = int(time.time()) + (30 * 24 * 60 * 60)  # 30 days for completed
 
-        contexto.no_atual = "CONCLUIDO"
-        contexto.updated_at = now
+        context.current_node = "COMPLETED"
+        context.updated_at = now
 
         try:
             self._table.put_item(
                 Item={
                     "workflow_id": workflow_id,
                     "checkpoint_key": "state#latest",
-                    "payload_json": contexto.model_dump_json(),
-                    "node_name": "CONCLUIDO",
+                    "payload_json": context.model_dump_json(),
+                    "node_name": "COMPLETED",
                     "updated_at": now,
                     "ttl": ttl,
                     "metadata": json.dumps({"completed": True}),
@@ -270,14 +301,21 @@ class DynamoDBStateManager:
             logger.error("Failed to mark workflow complete: %s", str(e))
             return False
 
-    def marcar_falha(
-        self, workflow_id: str, contexto: ContextoWorkflow, error: str
+    # Backward-compatible alias
+    def marcar_concluido(self, workflow_id: str, contexto: WorkflowContext) -> bool:
+        """Backward-compatible alias for mark_completed."""
+        return self.mark_completed(workflow_id, contexto)
+
+    def mark_failed(
+        self, workflow_id: str, context: WorkflowContext, error: str
     ) -> bool:
         """Mark a workflow as failed (terminal state with error context).
 
+        Previously named: marcar_falha
+
         Args:
             workflow_id: Unique workflow execution ID.
-            contexto: Current workflow context at failure point.
+            context: Current workflow context at failure point.
             error: Error description.
 
         Returns:
@@ -286,44 +324,53 @@ class DynamoDBStateManager:
         now = datetime.now(timezone.utc).isoformat()
         ttl = int(time.time()) + (14 * 24 * 60 * 60)  # 14 days for failed
 
-        contexto.erros.append(f"[{now}] {error}")
-        contexto.updated_at = now
+        context.erros.append(f"[{now}] {error}")
+        context.updated_at = now
 
         try:
             self._table.put_item(
                 Item={
                     "workflow_id": workflow_id,
                     "checkpoint_key": "state#latest",
-                    "payload_json": contexto.model_dump_json(),
-                    "node_name": f"FALHA#{contexto.no_atual}",
+                    "payload_json": context.model_dump_json(),
+                    "node_name": f"FAILURE#{context.current_node}",
                     "updated_at": now,
                     "ttl": ttl,
                     "metadata": json.dumps({"failed": True, "error": error[:500]}),
                 }
             )
-            logger.info("Workflow marked as failed: %s at node %s", workflow_id, contexto.no_atual)
+            logger.info("Workflow marked as failed: %s at node %s", workflow_id, context.current_node)
             return True
 
         except ClientError as e:
             logger.error("Failed to mark workflow failure: %s", str(e))
             return False
 
-    def listar_workflows_ativos(self, limit: int = 50) -> list[dict[str, Any]]:
+    # Backward-compatible alias
+    def marcar_falha(
+        self, workflow_id: str, contexto: WorkflowContext, error: str
+    ) -> bool:
+        """Backward-compatible alias for mark_failed."""
+        return self.mark_failed(workflow_id, contexto, error)
+
+    def list_active_workflows(self, limit: int = 50) -> list[dict[str, Any]]:
         """List active (non-completed) workflows for monitoring.
 
-        Scans for workflows where node_name is not CONCLUIDO or FALHA.
+        Scans for workflows where node_name is not COMPLETED or FAILURE.
         Used by the observability portal for workflow status display.
+
+        Previously named: listar_workflows_ativos
 
         Returns:
             List of workflow summary dicts.
         """
         try:
             response = self._table.scan(
-                FilterExpression="checkpoint_key = :latest AND NOT begins_with(node_name, :falha) AND node_name <> :concluido",
+                FilterExpression="checkpoint_key = :latest AND NOT begins_with(node_name, :failure) AND node_name <> :completed",
                 ExpressionAttributeValues={
                     ":latest": "state#latest",
-                    ":falha": "FALHA#",
-                    ":concluido": "CONCLUIDO",
+                    ":failure": "FAILURE#",
+                    ":completed": "COMPLETED",
                 },
                 Limit=limit,
                 ProjectionExpression="workflow_id, node_name, updated_at",
@@ -333,3 +380,8 @@ class DynamoDBStateManager:
         except ClientError as e:
             logger.warning("Failed to list active workflows: %s", str(e))
             return []
+
+    # Backward-compatible alias
+    def listar_workflows_ativos(self, limit: int = 50) -> list[dict[str, Any]]:
+        """Backward-compatible alias for list_active_workflows."""
+        return self.list_active_workflows(limit)

@@ -9,17 +9,17 @@ Extends the DynamoDB state manager with circuit-breaking behavior:
 
 Design:
   - Retry counter is stored atomically in DynamoDB (no race conditions)
-  - DLQ message contains full ContextoWorkflow + error metadata
+  - DLQ message contains full WorkflowContext + error metadata
   - SQS message attributes enable filtering by error type in CloudWatch
   - Compatible with SQS → Lambda → SNS alerting pipelines
 
 DLQ Message Schema:
   {
     "workflow_id": "wf-abc123",
-    "no_falho": "ESCRITA",
+    "no_falho": "ENGINEERING",
     "erro": "TimeoutError: Bedrock invocation exceeded 120s",
     "tentativas": 3,
-    "contexto_final": { ... full ContextoWorkflow ... },
+    "contexto_final": { ... full WorkflowContext ... },
     "classificacao": "INFRASTRUCTURE|CODE|MODEL|TIMEOUT",
     "timestamp": "2026-05-16T..."
   }
@@ -40,7 +40,7 @@ import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
-from src.core.a2a.contracts import ContextoWorkflow
+from src.core.a2a.contracts import WorkflowContext, ContextoWorkflow
 from src.core.a2a.state_manager import DynamoDBStateManager
 
 logger = logging.getLogger(__name__)
@@ -126,8 +126,8 @@ class ResilientStateManager(DynamoDBStateManager):
         manager = ResilientStateManager()
         should_retry = manager.registrar_falha_com_retry(
             workflow_id="wf-123",
-            no_atual="ESCRITA",
-            contexto=contexto,
+            current_node="ENGINEERING",
+            context=context,
             erro=exception,
         )
         if not should_retry:
@@ -159,9 +159,12 @@ class ResilientStateManager(DynamoDBStateManager):
     def registrar_falha_com_retry(
         self,
         workflow_id: str,
-        no_atual: str,
-        contexto: ContextoWorkflow,
-        erro: Exception | str,
+        current_node: str = "",
+        context: WorkflowContext | None = None,
+        erro: Exception | str = "",
+        # Backward-compatible parameter names
+        no_atual: str = "",
+        contexto: WorkflowContext | None = None,
     ) -> bool:
         """Register a failure and determine if retry is allowed.
 
@@ -170,20 +173,26 @@ class ResilientStateManager(DynamoDBStateManager):
 
         Args:
             workflow_id: Unique workflow execution ID.
-            no_atual: Current graph node where failure occurred.
-            contexto: Full workflow context at failure point.
+            current_node: Current graph node where failure occurred.
+            context: Full workflow context at failure point.
             erro: The exception or error message.
+            no_atual: Backward-compatible alias for current_node.
+            contexto: Backward-compatible alias for context.
 
         Returns:
             True if retry is allowed (counter < max), False if sent to DLQ.
         """
+        # Support both old and new parameter names
+        _current_node = current_node or no_atual
+        _context = context or contexto
+
         erro_str = f"{type(erro).__name__}: {str(erro)[:500]}" if isinstance(erro, Exception) else str(erro)[:500]
-        classificacao = classify_error(erro)
+        classification = classify_error(erro)
         now = datetime.now(timezone.utc).isoformat()
 
         # Append error to context
-        contexto.erros.append(f"[{now}] [{classificacao.value}] {erro_str}")
-        contexto.updated_at = now
+        _context.erros.append(f"[{now}] [{classification.value}] {erro_str}")
+        _context.updated_at = now
 
         try:
             # Atomic increment of retry counter
@@ -203,42 +212,42 @@ class ResilientStateManager(DynamoDBStateManager):
                 ExpressionAttributeValues={
                     ":zero": 0,
                     ":one": 1,
-                    ":node": no_atual,
+                    ":node": _current_node,
                     ":erro": erro_str,
-                    ":cls": classificacao.value,
+                    ":cls": classification.value,
                     ":now": now,
-                    ":payload": contexto.model_dump_json(),
+                    ":payload": _context.model_dump_json(),
                 },
                 ReturnValues="UPDATED_NEW",
             )
 
-            tentativas = int(response["Attributes"]["retry_count"])
+            attempts = int(response["Attributes"]["retry_count"])
             logger.warning(
                 "Workflow %s failed at node %s (attempt %d/%d, class=%s): %s",
-                workflow_id, no_atual, tentativas, self._max_retries,
-                classificacao.value, erro_str[:100],
+                workflow_id, _current_node, attempts, self._max_retries,
+                classification.value, erro_str[:100],
             )
 
             # Check if retries exhausted
-            if tentativas >= self._max_retries:
+            if attempts >= self._max_retries:
                 logger.error(
                     "Workflow %s exhausted %d retries — dispatching to DLQ",
                     workflow_id, self._max_retries,
                 )
-                self._enviar_para_dlq(
+                self._send_to_dlq(
                     workflow_id=workflow_id,
-                    no_atual=no_atual,
-                    contexto=contexto,
-                    erro_str=erro_str,
-                    classificacao=classificacao,
-                    tentativas=tentativas,
+                    current_node=_current_node,
+                    context=_context,
+                    error_str=erro_str,
+                    classification=classification,
+                    attempts=attempts,
                 )
                 # Mark as failed in state table
-                self.marcar_falha(workflow_id, contexto, f"DLQ after {tentativas} retries: {erro_str}")
+                self.mark_failed(workflow_id, _context, f"DLQ after {attempts} retries: {erro_str}")
                 return False
 
             # Retry allowed — save checkpoint at current node for recovery
-            self.salvar_checkpoint(workflow_id, no_atual, contexto)
+            self.save_checkpoint(workflow_id, _current_node, _context)
             return True
 
         except ClientError as e:
@@ -249,14 +258,14 @@ class ResilientStateManager(DynamoDBStateManager):
             # On infrastructure failure, allow retry (fail-open)
             return True
 
-    def _enviar_para_dlq(
+    def _send_to_dlq(
         self,
         workflow_id: str,
-        no_atual: str,
-        contexto: ContextoWorkflow,
-        erro_str: str,
-        classificacao: ErrorClassification,
-        tentativas: int,
+        current_node: str,
+        context: WorkflowContext,
+        error_str: str,
+        classification: ErrorClassification,
+        attempts: int,
     ) -> bool:
         """Dispatch failed workflow state to SQS Dead Letter Queue.
 
@@ -265,13 +274,15 @@ class ResilientStateManager(DynamoDBStateManager):
           - Replay the workflow (context can be re-injected)
           - Alert operations (classification + severity)
 
+        Previously named: _enviar_para_dlq
+
         Args:
             workflow_id: Unique workflow execution ID.
-            no_atual: Node where final failure occurred.
-            contexto: Full workflow context.
-            erro_str: Formatted error string.
-            classificacao: Error classification.
-            tentativas: Total retry attempts made.
+            current_node: Node where final failure occurred.
+            context: Full workflow context.
+            error_str: Formatted error string.
+            classification: Error classification.
+            attempts: Total retry attempts made.
 
         Returns:
             True if message was sent successfully.
@@ -287,11 +298,11 @@ class ResilientStateManager(DynamoDBStateManager):
 
         dlq_message = {
             "workflow_id": workflow_id,
-            "no_falho": no_atual,
-            "erro": erro_str,
-            "tentativas": tentativas,
-            "classificacao": classificacao.value,
-            "contexto_final": contexto.model_dump(),
+            "no_falho": current_node,
+            "erro": error_str,
+            "tentativas": attempts,
+            "classificacao": classification.value,
+            "contexto_final": context.model_dump(),
             "timestamp": now,
             "environment": os.environ.get("ENVIRONMENT", "dev"),
             "agent_endpoints": {
@@ -312,21 +323,21 @@ class ResilientStateManager(DynamoDBStateManager):
                     },
                     "ErrorClassification": {
                         "DataType": "String",
-                        "StringValue": classificacao.value,
+                        "StringValue": classification.value,
                     },
                     "FailedNode": {
                         "DataType": "String",
-                        "StringValue": no_atual,
+                        "StringValue": current_node,
                     },
                     "RetryCount": {
                         "DataType": "Number",
-                        "StringValue": str(tentativas),
+                        "StringValue": str(attempts),
                     },
                 },
             )
             logger.info(
                 "DLQ message sent: workflow=%s node=%s class=%s attempts=%d",
-                workflow_id, no_atual, classificacao.value, tentativas,
+                workflow_id, current_node, classification.value, attempts,
             )
             return True
 
@@ -337,8 +348,13 @@ class ResilientStateManager(DynamoDBStateManager):
             )
             return False
 
-    def resetar_retries(self, workflow_id: str) -> bool:
+    # Backward-compatible alias
+    _enviar_para_dlq = _send_to_dlq
+
+    def reset_retries(self, workflow_id: str) -> bool:
         """Reset retry counter for a workflow (used after manual intervention).
+
+        Previously named: resetar_retries
 
         Args:
             workflow_id: Workflow to reset.
@@ -358,3 +374,6 @@ class ResilientStateManager(DynamoDBStateManager):
         except ClientError as e:
             logger.warning("Failed to reset retries: %s", str(e))
             return False
+
+    # Backward-compatible alias
+    resetar_retries = reset_retries

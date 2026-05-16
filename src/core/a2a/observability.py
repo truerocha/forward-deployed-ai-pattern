@@ -36,8 +36,8 @@ logger = logging.getLogger(__name__)
 _TRACING_INITIALIZED = False
 
 
-def inicializar_tracing(
-    nome_servico: str,
+def initialize_tracing(
+    service_name: str,
     endpoint: str | None = None,
     environment: str | None = None,
 ) -> bool:
@@ -49,8 +49,10 @@ def inicializar_tracing(
 
     This function is idempotent — calling it multiple times is safe.
 
+    Previously named: inicializar_tracing (param nome_servico → service_name)
+
     Args:
-        nome_servico: Service name that appears in X-Ray traces
+        service_name: Service name that appears in X-Ray traces
                       (e.g., "fde-a2a-pesquisa", "fde-a2a-orchestrator").
         endpoint: OTLP collector endpoint. Defaults to localhost:4317
                   (ADOT sidecar in same ECS task).
@@ -62,7 +64,7 @@ def inicializar_tracing(
     global _TRACING_INITIALIZED
 
     if _TRACING_INITIALIZED:
-        logger.debug("Tracing already initialized for %s", nome_servico)
+        logger.debug("Tracing already initialized for %s", service_name)
         return True
 
     _endpoint = endpoint or os.environ.get(
@@ -84,12 +86,12 @@ def inicializar_tracing(
 
         # Resource attributes identify this service in X-Ray
         resource = Resource.create(attributes={
-            "service.name": nome_servico,
+            "service.name": service_name,
             "service.version": "1.0.0",
             "deployment.environment": _environment,
             "cloud.provider": "aws",
             "cloud.platform": "aws_ecs",
-            "faas.name": nome_servico,
+            "faas.name": service_name,
         })
 
         # Configure tracer provider
@@ -120,7 +122,7 @@ def inicializar_tracing(
         _TRACING_INITIALIZED = True
         logger.info(
             "OTel tracing initialized: service=%s endpoint=%s env=%s",
-            nome_servico, _endpoint, _environment,
+            service_name, _endpoint, _environment,
         )
         return True
 
@@ -136,6 +138,10 @@ def inicializar_tracing(
     except Exception as e:
         logger.warning("OTel initialization failed (non-blocking): %s", str(e)[:200])
         return False
+
+
+# Backward-compatible alias
+inicializar_tracing = initialize_tracing
 
 
 def _instrument_httpx():
@@ -190,7 +196,7 @@ def trace_workflow_node(
     the A2A invocation and any post-processing.
 
     Usage:
-        with trace_workflow_node("wf-123", "PESQUISA", {"query": "..."}):
+        with trace_workflow_node("wf-123", "RESEARCH", {"query": "..."}):
             result = await agent.invoke(...)
 
     Args:

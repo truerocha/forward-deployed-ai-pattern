@@ -16,16 +16,25 @@ Ref: docs/adr/ADR-034-a2a-protocol-strands-integration.md
 """
 
 from src.core.a2a.contracts import (
+    RawContent,
+    FinalReport,
+    WorkflowContext,
+    ReviewFeedback,
+    GeneratedArtifact,
+    CriticismItem,
+    TaskPayload,
+    # Backward-compatible aliases (pt-BR names)
     ConteudoBruto,
     RelatorioFinal,
     ContextoWorkflow,
     FeedbackRevisao,
-    TaskPayload,
+    ArtefatoGerado,
+    CriticaItem,
 )
 from src.core.a2a.state_manager import DynamoDBStateManager
 from src.core.a2a.workflow_graph import A2AWorkflowGraph, GrafoResiliente
 from src.core.a2a.resilience import ResilientStateManager, ErrorClassification, classify_error
-from src.core.a2a.observability import inicializar_tracing, trace_workflow_node, trace_a2a_invocation
+from src.core.a2a.observability import initialize_tracing, inicializar_tracing, trace_workflow_node, trace_a2a_invocation
 from src.core.a2a.agent_cards import (
     AGENT_CARD_REGISTRY,
     PESQUISA_CARD,
@@ -43,12 +52,21 @@ from src.core.a2a.squad_bridge import (
 )
 
 __all__ = [
-    # Contracts
+    # Contracts (new en-US names)
+    "RawContent",
+    "FinalReport",
+    "WorkflowContext",
+    "ReviewFeedback",
+    "GeneratedArtifact",
+    "CriticismItem",
+    "TaskPayload",
+    # Contracts (backward-compatible pt-BR aliases)
     "ConteudoBruto",
     "RelatorioFinal",
     "ContextoWorkflow",
     "FeedbackRevisao",
-    "TaskPayload",
+    "ArtefatoGerado",
+    "CriticaItem",
     # State Management
     "DynamoDBStateManager",
     "ResilientStateManager",
@@ -73,6 +91,7 @@ __all__ = [
     "ErrorClassification",
     "classify_error",
     # Observability
+    "initialize_tracing",
     "inicializar_tracing",
     "trace_workflow_node",
     "trace_a2a_invocation",

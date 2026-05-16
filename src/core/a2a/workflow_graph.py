@@ -9,9 +9,9 @@ Implements a directed graph of A2A agents with:
   - Streaming support via A2AAgent.stream()
 
 Graph Topology:
-  PESQUISA → ESCRITA → REVISAO → [APROVADO | loop back to ESCRITA]
+  RESEARCH → ENGINEERING → REVIEW → [APPROVED | loop back to ENGINEERING]
                                          ↓ (max 3 attempts)
-                                      CONCLUIDO
+                                      COMPLETED
 
 Each node is an independent A2A Server running in its own ECS container.
 The orchestrator connects to them via Cloud Map DNS (e.g., pesquisa.fde.local:9001).
@@ -29,12 +29,17 @@ import uuid
 from typing import Any, Optional
 
 from src.core.a2a.contracts import (
+    RawContent,
+    WorkflowContext,
+    ReviewFeedback,
+    QualityVerdict,
+    FinalReport,
+    TaskPayload,
+    # Backward-compatible aliases
     ConteudoBruto,
     ContextoWorkflow,
     FeedbackRevisao,
-    QualityVerdict,
     RelatorioFinal,
-    TaskPayload,
 )
 from src.core.a2a.state_manager import DynamoDBStateManager
 
@@ -85,9 +90,9 @@ class A2AWorkflowGraph:
         self._timeout = timeout
 
         # Lazy-loaded A2A agent proxies (initialized on first use)
-        self._agente_pesquisa = None
-        self._agente_escrita = None
-        self._agente_revisao = None
+        self._research_agent = None
+        self._engineering_agent = None
+        self._review_agent = None
 
     def _get_a2a_agent(self, endpoint: str):
         """Lazily create an A2AAgent proxy for the given endpoint.
@@ -106,116 +111,139 @@ class A2AWorkflowGraph:
             return _MockA2AAgent(endpoint)
 
     @property
-    def agente_pesquisa(self):
+    def research_agent(self):
         """Research agent proxy (lazy initialization)."""
-        if self._agente_pesquisa is None:
-            self._agente_pesquisa = self._get_a2a_agent(self._pesquisa_endpoint)
-        return self._agente_pesquisa
+        if self._research_agent is None:
+            self._research_agent = self._get_a2a_agent(self._pesquisa_endpoint)
+        return self._research_agent
+
+    @property
+    def engineering_agent(self):
+        """Writing agent proxy (lazy initialization)."""
+        if self._engineering_agent is None:
+            self._engineering_agent = self._get_a2a_agent(self._escrita_endpoint)
+        return self._engineering_agent
+
+    @property
+    def review_agent(self):
+        """Reviewer agent proxy (lazy initialization)."""
+        if self._review_agent is None:
+            self._review_agent = self._get_a2a_agent(self._revisao_endpoint)
+        return self._review_agent
+
+    # Backward-compatible property aliases
+    @property
+    def agente_pesquisa(self):
+        """Backward-compatible alias for research_agent."""
+        return self.research_agent
 
     @property
     def agente_escrita(self):
-        """Writing agent proxy (lazy initialization)."""
-        if self._agente_escrita is None:
-            self._agente_escrita = self._get_a2a_agent(self._escrita_endpoint)
-        return self._agente_escrita
+        """Backward-compatible alias for engineering_agent."""
+        return self.engineering_agent
 
     @property
     def agente_revisao(self):
-        """Reviewer agent proxy (lazy initialization)."""
-        if self._agente_revisao is None:
-            self._agente_revisao = self._get_a2a_agent(self._revisao_endpoint)
-        return self._agente_revisao
+        """Backward-compatible alias for review_agent."""
+        return self.review_agent
 
-    async def executar_workflow(self, prompt_inicial: str) -> RelatorioFinal:
+    async def execute_workflow(self, initial_prompt: str) -> FinalReport:
         """Execute the full A2A workflow graph from a user prompt.
 
         This is the simple (non-resilient) execution path — no checkpointing.
         Use GrafoResiliente for production workloads with fault recovery.
 
+        Previously named: executar_workflow (param prompt_inicial → initial_prompt)
+
         Args:
-            prompt_inicial: The user's task description.
+            initial_prompt: The user's task description.
 
         Returns:
-            The final approved RelatorioFinal.
+            The final approved FinalReport.
         """
         workflow_id = f"wf-{uuid.uuid4().hex[:12]}"
-        contexto = ContextoWorkflow(
+        context = WorkflowContext(
             workflow_id=workflow_id,
-            input_usuario=prompt_inicial,
+            user_input=initial_prompt,
         )
 
-        # ─── Node 1: PESQUISA (Research) ─────────────────────────────────
-        logger.info("[%s] Node PESQUISA: Starting research...", workflow_id)
+        # ─── Node 1: RESEARCH ────────────────────────────────────────────
+        logger.info("[%s] Node RESEARCH: Starting research...", workflow_id)
         start = time.time()
 
-        resposta_pesquisa = await self.agente_pesquisa.invoke(
+        research_response = await self.research_agent.invoke(
             task="Coleta de dados detalhada e estruturada",
-            payload={"query": contexto.input_usuario},
+            payload={"query": context.user_input},
         )
-        contexto.dados_pesquisa = ConteudoBruto.model_validate(resposta_pesquisa)
-        contexto.metricas_execucao["pesquisa_duration_s"] = round(time.time() - start, 2)
+        context.research_data = RawContent.model_validate(research_response)
+        context.execution_metrics["pesquisa_duration_s"] = round(time.time() - start, 2)
 
-        # ─── Node 2: ESCRITA (Engineering/Writing) ───────────────────────
-        logger.info("[%s] Node ESCRITA: Generating deliverable...", workflow_id)
+        # ─── Node 2: ENGINEERING ─────────────────────────────────────────
+        logger.info("[%s] Node ENGINEERING: Generating deliverable...", workflow_id)
         start = time.time()
 
-        resposta_escrita = await self.agente_escrita.invoke(
+        engineering_response = await self.engineering_agent.invoke(
             task="Produzir documento técnico estruturado com base nos dados de pesquisa",
-            payload=contexto.dados_pesquisa.model_dump(),
+            payload=context.research_data.model_dump(),
         )
-        contexto.relatorio = RelatorioFinal.model_validate(resposta_escrita)
-        contexto.metricas_execucao["escrita_duration_s"] = round(time.time() - start, 2)
+        context.report = FinalReport.model_validate(engineering_response)
+        context.execution_metrics["escrita_duration_s"] = round(time.time() - start, 2)
 
-        # ─── Node 3: REVISAO (Review with feedback loop) ─────────────────
-        for tentativa in range(1, contexto.max_tentativas + 1):
+        # ─── Node 3: REVIEW (with feedback loop) ─────────────────────────
+        for attempt in range(1, context.max_attempts + 1):
             logger.info(
-                "[%s] Node REVISAO: Review attempt %d/%d...",
-                workflow_id, tentativa, contexto.max_tentativas,
+                "[%s] Node REVIEW: Review attempt %d/%d...",
+                workflow_id, attempt, context.max_attempts,
             )
             start = time.time()
 
-            resultado_revisao = await self.agente_revisao.invoke(
+            review_result = await self.review_agent.invoke(
                 task="Avaliar qualidade técnica do relatório",
-                payload=contexto.relatorio.model_dump(),
+                payload=context.report.model_dump(),
             )
 
-            feedback = FeedbackRevisao.model_validate(resultado_revisao)
-            contexto.feedback = feedback
-            contexto.tentativas_revisao = tentativa
+            feedback = ReviewFeedback.model_validate(review_result)
+            context.feedback = feedback
+            context.review_attempts = attempt
 
             duration = round(time.time() - start, 2)
-            contexto.metricas_execucao[f"revisao_{tentativa}_duration_s"] = duration
+            context.execution_metrics[f"revisao_{attempt}_duration_s"] = duration
 
             # ─── Dynamic Routing Decision ────────────────────────────────
-            if feedback.veredicto == QualityVerdict.APPROVED or feedback.aprovado:
-                logger.info("[%s] Deliverable APPROVED on attempt %d", workflow_id, tentativa)
-                contexto.relatorio.aprovado = True
+            if feedback.verdict == QualityVerdict.APPROVED or feedback.approved:
+                logger.info("[%s] Deliverable APPROVED on attempt %d", workflow_id, attempt)
+                context.report.approved = True
                 break
 
-            if tentativa >= contexto.max_tentativas:
+            if attempt >= context.max_attempts:
                 logger.warning(
                     "[%s] Max review attempts reached — force-approving", workflow_id
                 )
-                contexto.relatorio.aprovado = True
+                context.report.approved = True
                 break
 
-            # ─── Feedback Loop: Route back to ESCRITA ────────────────────
+            # ─── Feedback Loop: Route back to ENGINEERING ────────────────
             logger.info(
-                "[%s] NEEDS_REVISION — routing back to ESCRITA (attempt %d)",
-                workflow_id, tentativa + 1,
+                "[%s] NEEDS_REVISION — routing back to ENGINEERING (attempt %d)",
+                workflow_id, attempt + 1,
             )
 
-            resposta_reescrita = await self.agente_escrita.invoke(
+            rewrite_response = await self.engineering_agent.invoke(
                 task="Corrigir relatório com base no feedback da revisão",
                 payload={
-                    "dados_originais": contexto.dados_pesquisa.model_dump(),
-                    "relatorio_anterior": contexto.relatorio.model_dump(),
+                    "dados_originais": context.research_data.model_dump(),
+                    "relatorio_anterior": context.report.model_dump(),
                     "feedback": feedback.model_dump(),
                 },
             )
-            contexto.relatorio = RelatorioFinal.model_validate(resposta_reescrita)
+            context.report = FinalReport.model_validate(rewrite_response)
 
-        return contexto.relatorio
+        return context.report
+
+    # Backward-compatible alias
+    async def executar_workflow(self, prompt_inicial: str) -> FinalReport:
+        """Backward-compatible alias for execute_workflow."""
+        return await self.execute_workflow(prompt_inicial)
 
 
 class GrafoResiliente(A2AWorkflowGraph):
@@ -238,150 +266,159 @@ class GrafoResiliente(A2AWorkflowGraph):
         super().__init__(**kwargs)
         self._db = state_manager or DynamoDBStateManager()
 
-    async def executar_com_recuperacao(
+    async def execute_with_recovery(
         self,
         workflow_id: str,
-        prompt_inicial: str = "",
-    ) -> RelatorioFinal:
+        initial_prompt: str = "",
+    ) -> FinalReport:
         """Execute workflow with checkpoint-based fault recovery.
 
-        On first call, starts from PESQUISA. On subsequent calls with the
+        On first call, starts from RESEARCH. On subsequent calls with the
         same workflow_id, resumes from the last saved checkpoint.
+
+        Previously named: executar_com_recuperacao (param prompt_inicial → initial_prompt)
 
         Args:
             workflow_id: Unique workflow ID (use same ID for recovery).
-            prompt_inicial: User prompt (only needed for new workflows).
+            initial_prompt: User prompt (only needed for new workflows).
 
         Returns:
-            The final RelatorioFinal (approved or force-approved).
+            The final FinalReport (approved or force-approved).
 
         Raises:
             RuntimeError: If workflow fails after all retry attempts.
         """
         # ─── Recovery: Load existing checkpoint ──────────────────────────
-        contexto = self._db.recuperar_checkpoint(workflow_id)
+        context = self._db.recover_checkpoint(workflow_id)
 
-        if contexto:
+        if context:
             logger.info(
                 "Recovering workflow %s from node: %s",
-                workflow_id, contexto.no_atual,
+                workflow_id, context.current_node,
             )
-            no_inicial = contexto.no_atual
+            initial_node = context.current_node
         else:
-            if not prompt_inicial:
+            if not initial_prompt:
                 raise ValueError(
-                    f"No checkpoint found for {workflow_id} and no prompt_inicial provided"
+                    f"No checkpoint found for {workflow_id} and no initial_prompt provided"
                 )
             logger.info("Starting new workflow: %s", workflow_id)
-            contexto = ContextoWorkflow(
+            context = WorkflowContext(
                 workflow_id=workflow_id,
-                input_usuario=prompt_inicial,
+                user_input=initial_prompt,
             )
-            no_inicial = "PESQUISA"
+            initial_node = "RESEARCH"
 
         try:
-            # ─── Node: PESQUISA ──────────────────────────────────────────
-            if no_inicial == "PESQUISA":
-                logger.info("[%s] Executing node PESQUISA...", workflow_id)
+            # ─── Node: RESEARCH ──────────────────────────────────────────
+            if initial_node == "RESEARCH":
+                logger.info("[%s] Executing node RESEARCH...", workflow_id)
                 start = time.time()
 
-                resposta = await self.agente_pesquisa.invoke(
+                response = await self.research_agent.invoke(
                     task="Coleta de dados detalhada e estruturada",
-                    payload={"query": contexto.input_usuario},
+                    payload={"query": context.user_input},
                 )
-                contexto.dados_pesquisa = ConteudoBruto.model_validate(resposta)
-                contexto.metricas_execucao["pesquisa_duration_s"] = round(
+                context.research_data = RawContent.model_validate(response)
+                context.execution_metrics["pesquisa_duration_s"] = round(
                     time.time() - start, 2
                 )
 
-                # Checkpoint: next node is ESCRITA
-                self._db.salvar_checkpoint(workflow_id, "ESCRITA", contexto)
-                no_inicial = "ESCRITA"
+                # Checkpoint: next node is ENGINEERING
+                self._db.save_checkpoint(workflow_id, "ENGINEERING", context)
+                initial_node = "ENGINEERING"
 
-            # ─── Node: ESCRITA ───────────────────────────────────────────
-            if no_inicial == "ESCRITA":
-                logger.info("[%s] Executing node ESCRITA...", workflow_id)
+            # ─── Node: ENGINEERING ───────────────────────────────────────
+            if initial_node == "ENGINEERING":
+                logger.info("[%s] Executing node ENGINEERING...", workflow_id)
                 start = time.time()
 
-                resposta = await self.agente_escrita.invoke(
+                response = await self.engineering_agent.invoke(
                     task="Produzir documento técnico estruturado",
-                    payload=contexto.dados_pesquisa.model_dump(),
+                    payload=context.research_data.model_dump(),
                 )
-                contexto.relatorio = RelatorioFinal.model_validate(resposta)
-                contexto.metricas_execucao["escrita_duration_s"] = round(
+                context.report = FinalReport.model_validate(response)
+                context.execution_metrics["escrita_duration_s"] = round(
                     time.time() - start, 2
                 )
 
-                # Checkpoint: next node is REVISAO
-                self._db.salvar_checkpoint(workflow_id, "REVISAO", contexto)
-                no_inicial = "REVISAO"
+                # Checkpoint: next node is REVIEW
+                self._db.save_checkpoint(workflow_id, "REVIEW", context)
+                initial_node = "REVIEW"
 
-            # ─── Node: REVISAO (with feedback loop) ──────────────────────
-            if no_inicial == "REVISAO":
-                remaining = contexto.max_tentativas - contexto.tentativas_revisao
+            # ─── Node: REVIEW (with feedback loop) ───────────────────────
+            if initial_node == "REVIEW":
+                remaining = context.max_attempts - context.review_attempts
 
-                for tentativa in range(1, remaining + 1):
+                for attempt in range(1, remaining + 1):
                     logger.info(
-                        "[%s] Executing node REVISAO (attempt %d)...",
-                        workflow_id, contexto.tentativas_revisao + 1,
+                        "[%s] Executing node REVIEW (attempt %d)...",
+                        workflow_id, context.review_attempts + 1,
                     )
                     start = time.time()
 
-                    resultado = await self.agente_revisao.invoke(
+                    result = await self.review_agent.invoke(
                         task="Avaliar qualidade técnica do relatório",
-                        payload=contexto.relatorio.model_dump(),
+                        payload=context.report.model_dump(),
                     )
 
-                    feedback = FeedbackRevisao.model_validate(resultado)
-                    contexto.feedback = feedback
-                    contexto.tentativas_revisao += 1
+                    feedback = ReviewFeedback.model_validate(result)
+                    context.feedback = feedback
+                    context.review_attempts += 1
 
                     duration = round(time.time() - start, 2)
-                    contexto.metricas_execucao[
-                        f"revisao_{contexto.tentativas_revisao}_duration_s"
+                    context.execution_metrics[
+                        f"revisao_{context.review_attempts}_duration_s"
                     ] = duration
 
-                    if feedback.veredicto == QualityVerdict.APPROVED or feedback.aprovado:
-                        contexto.relatorio.aprovado = True
+                    if feedback.verdict == QualityVerdict.APPROVED or feedback.approved:
+                        context.report.approved = True
                         logger.info(
                             "[%s] APPROVED on attempt %d",
-                            workflow_id, contexto.tentativas_revisao,
+                            workflow_id, context.review_attempts,
                         )
                         break
 
-                    if contexto.tentativas_revisao >= contexto.max_tentativas:
-                        contexto.relatorio.aprovado = True
+                    if context.review_attempts >= context.max_attempts:
+                        context.report.approved = True
                         logger.warning(
                             "[%s] Max attempts reached — force-approving", workflow_id
                         )
                         break
 
                     # Feedback loop: rewrite
-                    logger.info("[%s] Routing back to ESCRITA for rework...", workflow_id)
-                    resposta = await self.agente_escrita.invoke(
+                    logger.info("[%s] Routing back to ENGINEERING for rework...", workflow_id)
+                    response = await self.engineering_agent.invoke(
                         task="Corrigir relatório com base no feedback",
                         payload={
-                            "dados_originais": contexto.dados_pesquisa.model_dump(),
-                            "relatorio_anterior": contexto.relatorio.model_dump(),
+                            "dados_originais": context.research_data.model_dump(),
+                            "relatorio_anterior": context.report.model_dump(),
                             "feedback": feedback.model_dump(),
                         },
                     )
-                    contexto.relatorio = RelatorioFinal.model_validate(resposta)
+                    context.report = FinalReport.model_validate(response)
 
                     # Checkpoint after each rework cycle
-                    self._db.salvar_checkpoint(workflow_id, "REVISAO", contexto)
+                    self._db.save_checkpoint(workflow_id, "REVIEW", context)
 
-            # ─── Terminal: CONCLUIDO ─────────────────────────────────────
-            self._db.marcar_concluido(workflow_id, contexto)
-            return contexto.relatorio
+            # ─── Terminal: COMPLETED ─────────────────────────────────────
+            self._db.mark_completed(workflow_id, context)
+            return context.report
 
         except Exception as e:
             error_msg = f"{type(e).__name__}: {str(e)[:300]}"
             logger.error("[%s] Workflow failed: %s", workflow_id, error_msg)
-            self._db.marcar_falha(workflow_id, contexto, error_msg)
+            self._db.mark_failed(workflow_id, context, error_msg)
             raise RuntimeError(
-                f"Workflow {workflow_id} failed at node {contexto.no_atual}: {error_msg}"
+                f"Workflow {workflow_id} failed at node {context.current_node}: {error_msg}"
             ) from e
+
+    # Backward-compatible alias
+    async def executar_com_recuperacao(
+        self, workflow_id: str, prompt_inicial: str = ""
+    ) -> FinalReport:
+        """Backward-compatible alias for execute_with_recovery."""
+        return await self.execute_with_recovery(workflow_id, prompt_inicial)
 
 
 class _MockA2AAgent:

@@ -26,10 +26,14 @@ from __future__ import annotations
 from typing import Any
 
 from src.core.a2a.contracts import (
+    RawContent,
+    ReviewFeedback,
+    FinalReport,
+    TaskPayload,
+    # Backward-compatible aliases
     ConteudoBruto,
     FeedbackRevisao,
     RelatorioFinal,
-    TaskPayload,
 )
 
 
@@ -119,7 +123,7 @@ PESQUISA_CARD = _build_card(
     version="1.0.0",
     endpoint="http://pesquisa.fde.local:9001",
     input_schema=TaskPayload.model_json_schema(),
-    output_schema=ConteudoBruto.model_json_schema(),
+    output_schema=RawContent.model_json_schema(),
     capabilities=[
         "factual_research",
         "source_attribution",
@@ -144,7 +148,7 @@ ESCRITA_CARD = _build_card(
     version="1.0.0",
     endpoint="http://escrita.fde.local:9002",
     input_schema=TaskPayload.model_json_schema(),
-    output_schema=RelatorioFinal.model_json_schema(),
+    output_schema=FinalReport.model_json_schema(),
     capabilities=[
         "document_generation",
         "code_generation",
@@ -169,7 +173,7 @@ REVISAO_CARD = _build_card(
     version="1.0.0",
     endpoint="http://revisao.fde.local:9003",
     input_schema=TaskPayload.model_json_schema(),
-    output_schema=FeedbackRevisao.model_json_schema(),
+    output_schema=ReviewFeedback.model_json_schema(),
     capabilities=[
         "quality_assessment",
         "structured_feedback",

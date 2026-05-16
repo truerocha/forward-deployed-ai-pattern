@@ -32,15 +32,20 @@ from typing import Any, Optional
 
 from src.core.a2a.agent_cards import AGENT_CARD_REGISTRY, list_cards
 from src.core.a2a.contracts import (
+    RawContent,
+    WorkflowContext,
+    ReviewFeedback,
+    QualityVerdict,
+    FinalReport,
+    TaskPayload,
+    # Backward-compatible aliases
     ConteudoBruto,
     ContextoWorkflow,
     FeedbackRevisao,
-    QualityVerdict,
     RelatorioFinal,
-    TaskPayload,
 )
 from src.core.a2a.observability import (
-    inicializar_tracing,
+    initialize_tracing,
     trace_a2a_invocation,
     trace_workflow_node,
 )
@@ -69,8 +74,10 @@ class SquadOrchestrator:
         revisao_endpoint: str | None = None,
         state_manager: ResilientStateManager | None = None,
         timeout: int = 120,
-        max_tentativas: int = 3,
+        max_attempts: int = 3,
         enable_tracing: bool = True,
+        # Backward-compatible parameter name
+        max_tentativas: int | None = None,
     ):
         """Initialize the squad orchestrator.
 
@@ -80,8 +87,9 @@ class SquadOrchestrator:
             revisao_endpoint: Review agent A2A endpoint.
             state_manager: Resilient state manager (DynamoDB + SQS DLQ).
             timeout: Default A2A invocation timeout in seconds.
-            max_tentativas: Maximum review feedback loops.
+            max_attempts: Maximum review feedback loops.
             enable_tracing: Whether to initialize OTel tracing.
+            max_tentativas: Backward-compatible alias for max_attempts.
         """
         self._pesquisa_endpoint = pesquisa_endpoint or os.environ.get(
             "A2A_PESQUISA_ENDPOINT", "http://pesquisa.fde.local:9001"
@@ -93,15 +101,15 @@ class SquadOrchestrator:
             "A2A_REVISAO_ENDPOINT", "http://revisao.fde.local:9003"
         )
         self._timeout = timeout
-        self._max_tentativas = max_tentativas
+        self._max_attempts = max_tentativas if max_tentativas is not None else max_attempts
 
         # State management with resilience (retry + DLQ)
         self._state = state_manager or ResilientStateManager()
 
         # Initialize distributed tracing
         if enable_tracing:
-            inicializar_tracing(
-                nome_servico="fde-a2a-orchestrator",
+            initialize_tracing(
+                service_name="fde-a2a-orchestrator",
                 environment=os.environ.get("ENVIRONMENT", "dev"),
             )
 
@@ -120,7 +128,7 @@ class SquadOrchestrator:
             self._revisao_endpoint,
         )
 
-    async def executar(
+    async def execute(
         self,
         prompt: str,
         workflow_id: str | None = None,
@@ -131,6 +139,8 @@ class SquadOrchestrator:
         This is the primary entry point for production execution.
         Handles the complete lifecycle: research → engineering → review → approval.
 
+        Previously named: executar
+
         Args:
             prompt: User task description / spec content.
             workflow_id: Optional workflow ID (for recovery). Generated if not provided.
@@ -140,7 +150,7 @@ class SquadOrchestrator:
             Execution result dict containing:
               - workflow_id: Unique execution ID
               - status: "completed" | "failed" | "dlq"
-              - relatorio: Final RelatorioFinal (if completed)
+              - report: Final FinalReport (if completed)
               - metricas: Execution metrics (durations, tokens, attempts)
               - erros: Accumulated errors (if any)
         """
@@ -150,60 +160,60 @@ class SquadOrchestrator:
         logger.info("[%s] Starting squad workflow: %s...", wf_id, prompt[:80])
 
         # ─── Recovery Check ──────────────────────────────────────────────
-        contexto = self._state.recuperar_checkpoint(wf_id)
+        context = self._state.recover_checkpoint(wf_id)
 
-        if contexto:
+        if context:
             logger.info(
                 "[%s] Recovering from checkpoint at node: %s (attempt %d)",
-                wf_id, contexto.no_atual, contexto.tentativas_revisao,
+                wf_id, context.current_node, context.review_attempts,
             )
         else:
-            contexto = ContextoWorkflow(
+            context = WorkflowContext(
                 workflow_id=wf_id,
-                input_usuario=prompt,
-                max_tentativas=self._max_tentativas,
+                user_input=prompt,
+                max_attempts=self._max_attempts,
             )
 
         try:
-            # ─── Node: PESQUISA ──────────────────────────────────────────
-            if contexto.no_atual in ("PESQUISA", ""):
-                contexto = await self._executar_pesquisa(wf_id, contexto)
+            # ─── Node: RESEARCH ──────────────────────────────────────────
+            if context.current_node in ("RESEARCH", ""):
+                context = await self._execute_research(wf_id, context)
 
-            # ─── Node: ESCRITA ───────────────────────────────────────────
-            if contexto.no_atual == "ESCRITA":
-                contexto = await self._executar_escrita(wf_id, contexto)
+            # ─── Node: ENGINEERING ───────────────────────────────────────
+            if context.current_node == "ENGINEERING":
+                context = await self._execute_engineering(wf_id, context)
 
-            # ─── Node: REVISAO (feedback loop) ───────────────────────────
-            if contexto.no_atual == "REVISAO":
-                contexto = await self._executar_revisao_loop(wf_id, contexto)
+            # ─── Node: REVIEW (feedback loop) ────────────────────────────
+            if context.current_node == "REVIEW":
+                context = await self._execute_review_loop(wf_id, context)
 
-            # ─── Terminal: CONCLUIDO ─────────────────────────────────────
+            # ─── Terminal: COMPLETED ─────────────────────────────────────
             total_duration = round(time.time() - start_time, 2)
-            contexto.metricas_execucao["total_duration_s"] = total_duration
-            contexto.metricas_execucao["metadata"] = metadata or {}
+            context.execution_metrics["total_duration_s"] = total_duration
+            context.execution_metrics["metadata"] = metadata or {}
 
-            self._state.marcar_concluido(wf_id, contexto)
+            self._state.mark_completed(wf_id, context)
 
             logger.info(
                 "[%s] Workflow COMPLETED in %.1fs (attempts=%d)",
-                wf_id, total_duration, contexto.tentativas_revisao,
+                wf_id, total_duration, context.review_attempts,
             )
 
             return {
                 "workflow_id": wf_id,
                 "status": "completed",
-                "relatorio": contexto.relatorio.model_dump() if contexto.relatorio else None,
-                "metricas": contexto.metricas_execucao,
-                "erros": contexto.erros,
-                "tentativas_revisao": contexto.tentativas_revisao,
+                "relatorio": context.report.model_dump() if context.report else None,
+                "metricas": context.execution_metrics,
+                "erros": context.erros,
+                "tentativas_revisao": context.review_attempts,
             }
 
         except Exception as e:
             # ─── Resilient Failure Handling ───────────────────────────────
             should_retry = self._state.registrar_falha_com_retry(
                 workflow_id=wf_id,
-                no_atual=contexto.no_atual,
-                contexto=contexto,
+                current_node=context.current_node,
+                context=context,
                 erro=e,
             )
 
@@ -212,14 +222,14 @@ class SquadOrchestrator:
             if should_retry:
                 logger.warning(
                     "[%s] Workflow failed at %s — retry allowed (%.1fs)",
-                    wf_id, contexto.no_atual, total_duration,
+                    wf_id, context.current_node, total_duration,
                 )
                 return {
                     "workflow_id": wf_id,
                     "status": "retryable",
-                    "no_falho": contexto.no_atual,
+                    "no_falho": context.current_node,
                     "erro": str(e)[:300],
-                    "metricas": contexto.metricas_execucao,
+                    "metricas": context.execution_metrics,
                 }
             else:
                 logger.error(
@@ -229,158 +239,186 @@ class SquadOrchestrator:
                 return {
                     "workflow_id": wf_id,
                     "status": "dlq",
-                    "no_falho": contexto.no_atual,
+                    "no_falho": context.current_node,
                     "erro": str(e)[:300],
                     "classificacao": classify_error(e).value,
-                    "metricas": contexto.metricas_execucao,
-                    "erros": contexto.erros,
+                    "metricas": context.execution_metrics,
+                    "erros": context.erros,
                 }
 
-    async def _executar_pesquisa(
-        self, wf_id: str, contexto: ContextoWorkflow
-    ) -> ContextoWorkflow:
-        """Execute the PESQUISA (research) node with tracing and validation."""
-        with trace_workflow_node(wf_id, "PESQUISA", {"query": contexto.input_usuario[:100]}):
-            logger.info("[%s] → PESQUISA: collecting research data...", wf_id)
+    # Backward-compatible alias
+    async def executar(
+        self,
+        prompt: str,
+        workflow_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Backward-compatible alias for execute."""
+        return await self.execute(prompt, workflow_id, metadata)
+
+    async def _execute_research(
+        self, wf_id: str, context: WorkflowContext
+    ) -> WorkflowContext:
+        """Execute the RESEARCH node with tracing and validation.
+
+        Previously named: _executar_pesquisa
+        """
+        with trace_workflow_node(wf_id, "RESEARCH", {"query": context.user_input[:100]}):
+            logger.info("[%s] → RESEARCH: collecting research data...", wf_id)
             start = time.time()
 
             with trace_a2a_invocation("pesquisa", "research", self._pesquisa_endpoint):
-                resposta = await self._graph.agente_pesquisa.invoke(
+                response = await self._graph.research_agent.invoke(
                     task="Coleta de dados detalhada e estruturada sobre o tópico solicitado",
-                    payload={"query": contexto.input_usuario},
+                    payload={"query": context.user_input},
                 )
 
-            # Contract validation — enforce ConteudoBruto schema
-            contexto.dados_pesquisa = ConteudoBruto.model_validate(resposta)
-            contexto.no_atual = "ESCRITA"
-            contexto.metricas_execucao["pesquisa_duration_s"] = round(time.time() - start, 2)
+            # Contract validation — enforce RawContent schema
+            context.research_data = RawContent.model_validate(response)
+            context.current_node = "ENGINEERING"
+            context.execution_metrics["pesquisa_duration_s"] = round(time.time() - start, 2)
 
             # Checkpoint after successful research
-            self._state.salvar_checkpoint(wf_id, "ESCRITA", contexto)
+            self._state.save_checkpoint(wf_id, "ENGINEERING", context)
 
             logger.info(
-                "[%s] ✓ PESQUISA complete: %d facts, confidence=%.2f (%.1fs)",
+                "[%s] ✓ RESEARCH complete: %d facts, confidence=%.2f (%.1fs)",
                 wf_id,
-                len(contexto.dados_pesquisa.fatos_encontrados),
-                contexto.dados_pesquisa.confianca,
-                contexto.metricas_execucao["pesquisa_duration_s"],
+                len(context.research_data.findings),
+                context.research_data.confidence,
+                context.execution_metrics["pesquisa_duration_s"],
             )
 
-        return contexto
+        return context
 
-    async def _executar_escrita(
-        self, wf_id: str, contexto: ContextoWorkflow
-    ) -> ContextoWorkflow:
-        """Execute the ESCRITA (engineering) node with tracing and validation."""
-        with trace_workflow_node(wf_id, "ESCRITA"):
-            logger.info("[%s] → ESCRITA: generating deliverable...", wf_id)
+    # Backward-compatible alias
+    _executar_pesquisa = _execute_research
+
+    async def _execute_engineering(
+        self, wf_id: str, context: WorkflowContext
+    ) -> WorkflowContext:
+        """Execute the ENGINEERING node with tracing and validation.
+
+        Previously named: _executar_escrita
+        """
+        with trace_workflow_node(wf_id, "ENGINEERING"):
+            logger.info("[%s] → ENGINEERING: generating deliverable...", wf_id)
             start = time.time()
 
             with trace_a2a_invocation("escrita", "engineering", self._escrita_endpoint):
-                resposta = await self._graph.agente_escrita.invoke(
+                response = await self._graph.engineering_agent.invoke(
                     task="Produzir documento técnico estruturado com base nos dados de pesquisa",
-                    payload=contexto.dados_pesquisa.model_dump(),
+                    payload=context.research_data.model_dump(),
                 )
 
-            # Contract validation — enforce RelatorioFinal schema
-            contexto.relatorio = RelatorioFinal.model_validate(resposta)
-            contexto.no_atual = "REVISAO"
-            contexto.metricas_execucao["escrita_duration_s"] = round(time.time() - start, 2)
+            # Contract validation — enforce FinalReport schema
+            context.report = FinalReport.model_validate(response)
+            context.current_node = "REVIEW"
+            context.execution_metrics["escrita_duration_s"] = round(time.time() - start, 2)
 
             # Checkpoint after successful engineering
-            self._state.salvar_checkpoint(wf_id, "REVISAO", contexto)
+            self._state.save_checkpoint(wf_id, "REVIEW", context)
 
             logger.info(
-                "[%s] ✓ ESCRITA complete: %d artifacts (%.1fs)",
+                "[%s] ✓ ENGINEERING complete: %d artifacts (%.1fs)",
                 wf_id,
-                len(contexto.relatorio.artefatos),
-                contexto.metricas_execucao["escrita_duration_s"],
+                len(context.report.artifacts),
+                context.execution_metrics["escrita_duration_s"],
             )
 
-        return contexto
+        return context
 
-    async def _executar_revisao_loop(
-        self, wf_id: str, contexto: ContextoWorkflow
-    ) -> ContextoWorkflow:
-        """Execute the REVISAO node with feedback loop back to ESCRITA."""
-        remaining = contexto.max_tentativas - contexto.tentativas_revisao
+    # Backward-compatible alias
+    _executar_escrita = _execute_engineering
+
+    async def _execute_review_loop(
+        self, wf_id: str, context: WorkflowContext
+    ) -> WorkflowContext:
+        """Execute the REVIEW node with feedback loop back to ENGINEERING.
+
+        Previously named: _executar_revisao_loop
+        """
+        remaining = context.max_attempts - context.review_attempts
 
         for ciclo in range(1, remaining + 1):
-            tentativa_atual = contexto.tentativas_revisao + 1
+            current_attempt = context.review_attempts + 1
 
             with trace_workflow_node(
-                wf_id, "REVISAO", {"attempt": tentativa_atual}
+                wf_id, "REVIEW", {"attempt": current_attempt}
             ):
                 logger.info(
-                    "[%s] → REVISAO: review attempt %d/%d...",
-                    wf_id, tentativa_atual, contexto.max_tentativas,
+                    "[%s] → REVIEW: review attempt %d/%d...",
+                    wf_id, current_attempt, context.max_attempts,
                 )
                 start = time.time()
 
                 with trace_a2a_invocation("revisao", "review", self._revisao_endpoint):
-                    resultado = await self._graph.agente_revisao.invoke(
+                    result = await self._graph.review_agent.invoke(
                         task="Avaliar qualidade técnica do relatório produzido",
-                        payload=contexto.relatorio.model_dump(),
+                        payload=context.report.model_dump(),
                     )
 
-                # Contract validation — enforce FeedbackRevisao schema
-                feedback = FeedbackRevisao.model_validate(resultado)
-                feedback.tentativa = tentativa_atual
-                contexto.feedback = feedback
-                contexto.tentativas_revisao = tentativa_atual
+                # Contract validation — enforce ReviewFeedback schema
+                feedback = ReviewFeedback.model_validate(result)
+                feedback.tentativa = current_attempt
+                context.feedback = feedback
+                context.review_attempts = current_attempt
 
                 duration = round(time.time() - start, 2)
-                contexto.metricas_execucao[f"revisao_{tentativa_atual}_duration_s"] = duration
+                context.execution_metrics[f"revisao_{current_attempt}_duration_s"] = duration
 
                 logger.info(
-                    "[%s] REVISAO result: verdict=%s score=%.2f criticas=%d (%.1fs)",
+                    "[%s] REVIEW result: verdict=%s score=%.2f criticisms=%d (%.1fs)",
                     wf_id,
-                    feedback.veredicto.value,
-                    feedback.score_qualidade,
-                    len(feedback.criticas),
+                    feedback.verdict.value,
+                    feedback.quality_score,
+                    len(feedback.criticisms),
                     duration,
                 )
 
             # ─── Routing Decision ────────────────────────────────────────
-            if feedback.veredicto == QualityVerdict.APPROVED or feedback.aprovado:
-                contexto.relatorio.aprovado = True
-                logger.info("[%s] ✓ APPROVED on attempt %d", wf_id, tentativa_atual)
+            if feedback.verdict == QualityVerdict.APPROVED or feedback.approved:
+                context.report.approved = True
+                logger.info("[%s] ✓ APPROVED on attempt %d", wf_id, current_attempt)
                 break
 
-            if tentativa_atual >= contexto.max_tentativas:
-                contexto.relatorio.aprovado = True
+            if current_attempt >= context.max_attempts:
+                context.report.approved = True
                 logger.warning(
                     "[%s] Max review attempts reached — force-approving", wf_id
                 )
                 break
 
-            # ─── Feedback Loop: Route back to ESCRITA ────────────────────
-            with trace_workflow_node(wf_id, "ESCRITA_REWORK", {"attempt": tentativa_atual}):
+            # ─── Feedback Loop: Route back to ENGINEERING ────────────────
+            with trace_workflow_node(wf_id, "ENGINEERING_REWORK", {"attempt": current_attempt}):
                 logger.info(
-                    "[%s] → ESCRITA (rework): addressing %d criticisms...",
-                    wf_id, len(feedback.criticas),
+                    "[%s] → ENGINEERING (rework): addressing %d criticisms...",
+                    wf_id, len(feedback.criticisms),
                 )
                 start = time.time()
 
                 with trace_a2a_invocation("escrita", "rework", self._escrita_endpoint):
-                    resposta = await self._graph.agente_escrita.invoke(
+                    response = await self._graph.engineering_agent.invoke(
                         task="Corrigir relatório com base no feedback da revisão",
                         payload={
-                            "dados_originais": contexto.dados_pesquisa.model_dump(),
-                            "relatorio_anterior": contexto.relatorio.model_dump(),
+                            "dados_originais": context.research_data.model_dump(),
+                            "relatorio_anterior": context.report.model_dump(),
                             "feedback": feedback.model_dump(),
                         },
                     )
 
-                contexto.relatorio = RelatorioFinal.model_validate(resposta)
-                contexto.metricas_execucao[f"rework_{tentativa_atual}_duration_s"] = round(
+                context.report = FinalReport.model_validate(response)
+                context.execution_metrics[f"rework_{current_attempt}_duration_s"] = round(
                     time.time() - start, 2
                 )
 
                 # Checkpoint after each rework cycle
-                self._state.salvar_checkpoint(wf_id, "REVISAO", contexto)
+                self._state.save_checkpoint(wf_id, "REVIEW", context)
 
-        return contexto
+        return context
+
+    # Backward-compatible alias
+    _executar_revisao_loop = _execute_review_loop
 
     def get_status(self, workflow_id: str) -> dict[str, Any]:
         """Get current status of a workflow (for monitoring/portal).
@@ -391,17 +429,17 @@ class SquadOrchestrator:
         Returns:
             Status dict with node, attempts, and last update time.
         """
-        contexto = self._state.recuperar_checkpoint(workflow_id)
-        if not contexto:
+        context = self._state.recover_checkpoint(workflow_id)
+        if not context:
             return {"workflow_id": workflow_id, "status": "not_found"}
 
         return {
             "workflow_id": workflow_id,
-            "status": "in_progress" if "FALHA" not in contexto.no_atual else "failed",
-            "no_atual": contexto.no_atual,
-            "tentativas_revisao": contexto.tentativas_revisao,
-            "updated_at": contexto.updated_at,
-            "erros": contexto.erros,
+            "status": "in_progress" if "FAILURE" not in context.current_node else "failed",
+            "current_node": context.current_node,
+            "review_attempts": context.review_attempts,
+            "updated_at": context.updated_at,
+            "erros": context.erros,
         }
 
     def list_active_workflows(self) -> list[dict[str, Any]]:
@@ -410,7 +448,7 @@ class SquadOrchestrator:
         Returns:
             List of workflow summaries from DynamoDB.
         """
-        return self._state.listar_workflows_ativos()
+        return self._state.list_active_workflows()
 
     @staticmethod
     def available_agents() -> list[dict[str, Any]]:
@@ -445,7 +483,7 @@ async def _run_from_cli():
 
     orchestrator = SquadOrchestrator(
         timeout=args.timeout,
-        max_tentativas=args.max_attempts,
+        max_attempts=args.max_attempts,
     )
 
     if args.list_agents:
@@ -481,7 +519,7 @@ async def _run_from_cli():
     if not args.prompt:
         parser.error("--prompt is required (or pipe JSON via stdin)")
 
-    result = await orchestrator.executar(
+    result = await orchestrator.execute(
         prompt=args.prompt,
         workflow_id=args.workflow_id,
     )

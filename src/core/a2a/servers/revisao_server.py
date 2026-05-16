@@ -30,9 +30,9 @@ Your role is to assess technical deliverables and provide structured feedback.
 
 You MUST return a JSON object conforming to this schema:
 {
-  "veredicto": "APPROVED" | "NEEDS_REVISION" | "REJECTED",
-  "score_qualidade": 0.0-1.0,
-  "criticas": [
+  "verdict": "APPROVED" | "NEEDS_REVISION" | "REJECTED",
+  "quality_score": 0.0-1.0,
+  "criticisms": [
     {
       "categoria": "correctness|completeness|style|security",
       "severidade": "critical|major|minor|suggestion",
@@ -41,9 +41,9 @@ You MUST return a JSON object conforming to this schema:
       "sugestao_correcao": "string — suggested fix"
     }
   ],
-  "pontos_positivos": ["string — positive aspects"],
+  "positive_points": ["string — positive aspects"],
   "recomendacoes": ["string — improvement recommendations"],
-  "aprovado": true|false
+  "approved": true|false
 }
 
 ## Verdict Rules
@@ -89,11 +89,11 @@ def create_review_server(
         Configured A2AServer instance (call .serve() to start).
     """
     from src.core.a2a.agent_cards import REVISAO_CARD
-    from src.core.a2a.observability import inicializar_tracing
+    from src.core.a2a.observability import initialize_tracing
 
     # Initialize distributed tracing (OTel → ADOT → X-Ray)
-    inicializar_tracing(
-        nome_servico="fde-a2a-revisao",
+    initialize_tracing(
+        service_name="fde-a2a-revisao",
         environment=os.environ.get("ENVIRONMENT", "dev"),
     )
 

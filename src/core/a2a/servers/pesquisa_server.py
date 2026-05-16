@@ -30,11 +30,11 @@ Your role is to collect, validate, and structure factual data for downstream age
 
 You MUST return a JSON object conforming to this schema:
 {
-  "topico": "string — the primary subject researched",
-  "fatos_encontrados": ["string — list of factual findings"],
-  "fontes": [{"url": "string", "title": "string", "relevance_score": 0.0-1.0}],
-  "contexto_adicional": {},
-  "confianca": 0.0-1.0
+  "topic": "string — the primary subject researched",
+  "findings": ["string — list of factual findings"],
+  "sources": [{"url": "string", "title": "string", "relevance_score": 0.0-1.0}],
+  "additional_context": {},
+  "confidence": 0.0-1.0
 }
 
 ## Rules
@@ -75,11 +75,11 @@ def create_research_server(
         Configured A2AServer instance (call .serve() to start).
     """
     from src.core.a2a.agent_cards import PESQUISA_CARD
-    from src.core.a2a.observability import inicializar_tracing
+    from src.core.a2a.observability import initialize_tracing
 
     # Initialize distributed tracing (OTel → ADOT → X-Ray)
-    inicializar_tracing(
-        nome_servico="fde-a2a-pesquisa",
+    initialize_tracing(
+        service_name="fde-a2a-pesquisa",
         environment=os.environ.get("ENVIRONMENT", "dev"),
     )
 
