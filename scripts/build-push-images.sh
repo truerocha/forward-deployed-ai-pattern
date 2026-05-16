@@ -46,13 +46,14 @@ done
 
 # ═══════════════════════════════════════════════════════════════
 # IMAGE REGISTRY — All buildable images in the project
-# Format: "name|dockerfile|tags|ecs_services_to_redeploy"
+# Format: "name|dockerfile|tags|ecs_services_to_redeploy|build_context"
+# build_context: relative to REPO_ROOT (default: "." = repo root)
 # ═══════════════════════════════════════════════════════════════
 IMAGES=(
-  "agent|Dockerfile.strands-agent|latest|"
-  "a2a|Dockerfile.a2a-agent|a2a-pesquisa-latest,a2a-escrita-latest,a2a-revisao-latest|fde-${ENVIRONMENT}-a2a-pesquisa,fde-${ENVIRONMENT}-a2a-escrita,fde-${ENVIRONMENT}-a2a-revisao"
-  "orchestrator|Dockerfile.orchestrator|orchestrator-latest|"
-  "onboarding|Dockerfile.onboarding-agent|onboarding-latest|"
+  "agent|Dockerfile.strands-agent|latest||."
+  "a2a|Dockerfile.a2a-agent|a2a-pesquisa-latest,a2a-escrita-latest,a2a-revisao-latest|fde-${ENVIRONMENT}-a2a-pesquisa,fde-${ENVIRONMENT}-a2a-escrita,fde-${ENVIRONMENT}-a2a-revisao|."
+  "orchestrator|Dockerfile.orchestrator|orchestrator-latest||."
+  "onboarding|Dockerfile.onboarding-agent|onboarding-latest||infra/docker"
 )
 
 LOG_PREFIX="[build-push]"
@@ -79,7 +80,7 @@ fi
 # STEP 2: Build and Push
 # ═══════════════════════════════════════════════════════════════
 for entry in "${IMAGES[@]}"; do
-  IFS='|' read -r name dockerfile tags services <<< "$entry"
+  IFS='|' read -r name dockerfile tags services build_ctx <<< "$entry"
 
   # Filter if --only specified
   if [[ -n "$ONLY" && "$ONLY" != "$name" ]]; then
@@ -87,6 +88,7 @@ for entry in "${IMAGES[@]}"; do
   fi
 
   DOCKERFILE_PATH="infra/docker/$dockerfile"
+  BUILD_CONTEXT="${build_ctx:-.}"
 
   # Verify Dockerfile exists
   if [[ ! -f "$REPO_ROOT/$DOCKERFILE_PATH" ]]; then
@@ -97,6 +99,7 @@ for entry in "${IMAGES[@]}"; do
   echo "$LOG_PREFIX ── [$name] ──────────────────────────────────────"
   echo "$LOG_PREFIX   Dockerfile: $DOCKERFILE_PATH"
   echo "$LOG_PREFIX   Tags: $tags"
+  echo "$LOG_PREFIX   Context: $BUILD_CONTEXT"
 
   if [ "$DRY_RUN" = true ]; then
     echo "$LOG_PREFIX   🏁 DRY RUN — would build and push"
@@ -112,7 +115,7 @@ for entry in "${IMAGES[@]}"; do
   done
 
   echo -n "$LOG_PREFIX   Building... "
-  if docker build --platform linux/amd64 -f "$REPO_ROOT/$DOCKERFILE_PATH" $TAG_ARGS "$REPO_ROOT" >/dev/null 2>&1; then
+  if docker build --platform linux/amd64 -f "$REPO_ROOT/$DOCKERFILE_PATH" $TAG_ARGS "$REPO_ROOT/$BUILD_CONTEXT" >/dev/null 2>&1; then
     echo "✅"
   else
     echo "❌"
