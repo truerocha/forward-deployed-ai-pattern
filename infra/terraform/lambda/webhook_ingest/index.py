@@ -151,20 +151,35 @@ def handler(event, context):
         # Pre-flight: validate dispatch readiness before emitting event
         block_reason = _validate_dispatch_readiness(target_mode)
         if block_reason:
-            # Mark task as BLOCKED — don't dispatch to a dead end
-            table.update_item(
-                Key={"task_id": task["task_id"]},
-                UpdateExpression="SET #s = :s, #e = :e, updated_at = :t",
-                ExpressionAttributeNames={"#s": "status", "#e": "error"},
-                ExpressionAttributeValues={
-                    ":s": "BLOCKED",
-                    ":e": f"dispatch_preflight_failed: {block_reason}",
-                    ":t": datetime.now(timezone.utc).isoformat(),
-                },
-            )
-            task["status"] = "BLOCKED"
-            logger.warning("Task BLOCKED (dispatch pre-flight failed): %s — %s",
-                           task["task_id"], block_reason)
+            if block_reason in ("orchestrator_not_ready", "config_read_failed"):
+                # Downgrade to monolith — orchestrator not available, but task can still run
+                target_mode = "monolith"
+                task["target_mode"] = "monolith"
+                table.update_item(
+                    Key={"task_id": task["task_id"]},
+                    UpdateExpression="SET target_mode = :tm, updated_at = :t",
+                    ExpressionAttributeValues={
+                        ":tm": "monolith",
+                        ":t": datetime.now(timezone.utc).isoformat(),
+                    },
+                )
+                logger.info("Downgraded to monolith (orchestrator not ready): %s", task["task_id"])
+                _emit_dispatch_event(task, depth_result, target_mode)
+            else:
+                # Hard block — infrastructure issue (missing image, etc.)
+                table.update_item(
+                    Key={"task_id": task["task_id"]},
+                    UpdateExpression="SET #s = :s, #e = :e, updated_at = :t",
+                    ExpressionAttributeNames={"#s": "status", "#e": "error"},
+                    ExpressionAttributeValues={
+                        ":s": "BLOCKED",
+                        ":e": f"dispatch_preflight_failed: {block_reason}",
+                        ":t": datetime.now(timezone.utc).isoformat(),
+                    },
+                )
+                task["status"] = "BLOCKED"
+                logger.warning("Task BLOCKED (dispatch pre-flight failed): %s — %s",
+                               task["task_id"], block_reason)
         else:
             _emit_dispatch_event(task, depth_result, target_mode)
 
@@ -447,16 +462,35 @@ def _fetch_metrics_signals(repo: str) -> dict:
 def _validate_dispatch_readiness(target_mode: str) -> str | None:
     """Pre-flight validation before dispatching to ECS.
 
-    Checks:
-    1. For distributed mode: ECR image exists for the orchestrator
-    2. ECR_REPOSITORY env var is configured
+    Reads runtime routing config from DynamoDB (CONFIG#dispatch_routing).
+    This allows the orchestrator to self-register when ready, and the reaper
+    to deregister it on failure — no Terraform deploy needed to change routing.
+
+    Behavior:
+    - If target_mode=monolith: always ready (no validation needed)
+    - If target_mode=distributed: check CONFIG#dispatch_routing.orchestrator_ready
+      - If true: validate ECR image exists, proceed with distributed
+      - If false (default): return block reason → caller downgrades to monolith
 
     Returns None if ready, or a human-readable block reason string.
-    This prevents silent dispatch failures (5 Whys root cause: missing image).
     """
     if target_mode != "distributed":
-        return None  # Monolith mode doesn't need ECR validation
+        return None  # Monolith mode doesn't need validation
 
+    # Check DynamoDB runtime config for orchestrator readiness
+    try:
+        table = dynamodb.Table(TASK_QUEUE_TABLE)
+        config = table.get_item(Key={"task_id": "CONFIG#dispatch_routing"}).get("Item", {})
+        orchestrator_ready = config.get("orchestrator_ready", False)
+
+        if not orchestrator_ready:
+            return "orchestrator_not_ready"  # Caller will downgrade to monolith
+    except Exception as e:
+        # DynamoDB read failed — safe default: orchestrator not ready
+        logger.warning("Dispatch config read failed (defaulting to monolith): %s", str(e))
+        return "config_read_failed"
+
+    # Orchestrator is registered as ready — validate ECR image exists
     if not ECR_REPOSITORY:
         return "ECR_REPOSITORY env var not configured — cannot validate image"
 
@@ -466,7 +500,7 @@ def _validate_dispatch_readiness(target_mode: str) -> str | None:
             repositoryName=ECR_REPOSITORY,
             imageIds=[{"imageTag": ORCHESTRATOR_IMAGE_TAG}],
         )
-        return None  # Image exists — ready to dispatch
+        return None  # Image exists + orchestrator registered → ready
     except ecr.exceptions.ImageNotFoundException:
         return f"ECR image '{ECR_REPOSITORY}:{ORCHESTRATOR_IMAGE_TAG}' not found — push image before dispatching"
     except Exception as e:
