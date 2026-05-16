@@ -299,7 +299,7 @@ class DataQualityScorer:
             table.put_item(
                 Item={
                     "project_id": self._project_id,
-                    "sk": f"quality#{assessment.artifact_name}",
+                    "knowledge_key": f"quality#{assessment.artifact_name}",
                     "artifact_name": assessment.artifact_name,
                     "data": json.dumps(assessment.to_dict()),
                     "composite_score": str(assessment.composite_score),
@@ -332,7 +332,7 @@ class DataQualityScorer:
             response = table.get_item(
                 Key={
                     "project_id": self._project_id,
-                    "sk": f"quality#{artifact_name}",
+                    "knowledge_key": f"quality#{artifact_name}",
                 }
             )
             item = response.get("Item")
@@ -404,7 +404,7 @@ class DataQualityScorer:
             response = table.query(
                 KeyConditionExpression=(
                     boto3.dynamodb.conditions.Key("project_id").eq(self._project_id)
-                    & boto3.dynamodb.conditions.Key("sk").begins_with("quality#")
+                    & boto3.dynamodb.conditions.Key("knowledge_key").begins_with("quality#")
                 )
             )
 
@@ -417,7 +417,7 @@ class DataQualityScorer:
                 response = table.query(
                     KeyConditionExpression=(
                         boto3.dynamodb.conditions.Key("project_id").eq(self._project_id)
-                        & boto3.dynamodb.conditions.Key("sk").begins_with("quality#")
+                        & boto3.dynamodb.conditions.Key("knowledge_key").begins_with("quality#")
                     ),
                     ExclusiveStartKey=response["LastEvaluatedKey"],
                 )
@@ -582,9 +582,9 @@ class DataQualityScorer:
                 response = table.get_item(
                     Key={
                         "project_id": self._project_id,
-                        "sk": sk,
+                        "knowledge_key": sk,
                     },
-                    ProjectionExpression="sk",
+                    ProjectionExpression="knowledge_key",
                 )
                 if response.get("Item"):
                     return True
@@ -633,7 +633,7 @@ class DataQualityScorer:
     ) -> None:
         """Process DynamoDB items into the artifacts discovery dict."""
         for item in items:
-            sk = item.get("sk", "")
+            sk = item.get("knowledge_key", "")
             # Skip quality entries (we're scoring those, not scoring ourselves)
             if sk.startswith("quality#"):
                 continue

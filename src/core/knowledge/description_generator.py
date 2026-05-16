@@ -195,7 +195,7 @@ class DescriptionGenerator:
                 table.put_item(
                     Item={
                         "project_id": self._project_id,
-                        "sk": f"description#{module_path}",
+                        "knowledge_key": f"description#{module_path}",
                         "module_path": module_path,
                         "description": description,
                         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -231,7 +231,7 @@ class DescriptionGenerator:
             response = table.get_item(
                 Key={
                     "project_id": self._project_id,
-                    "sk": f"description#{module_path}",
+                    "knowledge_key": f"description#{module_path}",
                 }
             )
             item = response.get("Item")
@@ -256,7 +256,7 @@ class DescriptionGenerator:
             response = table.query(
                 KeyConditionExpression=(
                     boto3.dynamodb.conditions.Key("project_id").eq(self._project_id)
-                    & boto3.dynamodb.conditions.Key("sk").begins_with("description#")
+                    & boto3.dynamodb.conditions.Key("knowledge_key").begins_with("description#")
                 )
             )
             for item in response.get("Items", []):
@@ -270,7 +270,7 @@ class DescriptionGenerator:
                 response = table.query(
                     KeyConditionExpression=(
                         boto3.dynamodb.conditions.Key("project_id").eq(self._project_id)
-                        & boto3.dynamodb.conditions.Key("sk").begins_with("description#")
+                        & boto3.dynamodb.conditions.Key("knowledge_key").begins_with("description#")
                     ),
                     ExclusiveStartKey=response["LastEvaluatedKey"],
                 )

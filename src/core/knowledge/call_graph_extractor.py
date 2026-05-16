@@ -253,7 +253,7 @@ class CallGraphExtractor:
                 table.put_item(
                     Item={
                         "project_id": self._project_id,
-                        "sk": f"callgraph#{graph.module_path}",
+                        "knowledge_key": f"callgraph#{graph.module_path}",
                         "data": json.dumps(graph.to_dict()),
                         "module_path": graph.module_path,
                         "extracted_at": graph.extracted_at,
@@ -293,7 +293,7 @@ class CallGraphExtractor:
             response = table.get_item(
                 Key={
                     "project_id": self._project_id,
-                    "sk": f"callgraph#{module_path}",
+                    "knowledge_key": f"callgraph#{module_path}",
                 }
             )
             item = response.get("Item")
