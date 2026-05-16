@@ -42,17 +42,17 @@
 resource "aws_cloudwatch_event_rule" "dispatch_distributed" {
   name           = "${local.name_prefix}-dispatch-distributed"
   event_bus_name = aws_cloudwatch_event_bus.factory.name
-  description    = "Routes high-depth tasks to distributed orchestrator (cognitive router)"
+  description    = "Routes all dispatched tasks to strands-agent ECS (handles both distributed and monolith-downgraded)"
 
   event_pattern = jsonencode({
     source      = ["fde.internal"]
     detail-type = ["task.dispatched"]
     detail = {
-      target_mode = ["distributed"]
+      target_mode = ["distributed", "monolith"]
     }
   })
 
-  tags = { Component = "cognitive-router", DispatchTarget = "distributed" }
+  tags = { Component = "cognitive-router", DispatchTarget = "strands-agent" }
 }
 
 resource "aws_cloudwatch_event_target" "dispatch_distributed_ecs" {
