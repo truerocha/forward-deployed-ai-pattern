@@ -184,8 +184,8 @@ export default function App() {
     { type: 'link', text: t('nav.catalog'), href: '#registries' },
     { type: 'divider' },
     { type: 'link', text: 'Observability', href: '#observability', info: <Badge color="blue">METRICS</Badge> },
-    { type: 'link', text: 'History', href: '#history', info: <Badge color="grey">ACTIVITY</Badge> },
     { type: 'link', text: 'Cost Breakdown', href: '#cost', info: <Badge color="grey">COST</Badge> },
+    { type: 'link', text: 'History', href: '#history', info: <Badge color="grey">ACTIVITY</Badge> },
   ];
 
   const handleNavFollow = (event: CustomEvent<SideNavigationProps.FollowDetail>) => {

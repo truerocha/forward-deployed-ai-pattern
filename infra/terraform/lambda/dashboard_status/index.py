@@ -171,16 +171,29 @@ def _handle_history(event, context):
             last_evaluated_key = response.get("LastEvaluatedKey")
         else:
             # Scan with time filter for all-status historical view
+            # Exclude CONFIG# and COUNTER# items that pollute scan results
             scan_kwargs = {
-                "FilterExpression": Attr("created_at").gte(cutoff),
-                "Limit": page_size * 3,
+                "FilterExpression": (
+                    Attr("created_at").gte(cutoff)
+                    & Attr("task_id").not_contains("CONFIG#")
+                    & Attr("task_id").not_contains("COUNTER#")
+                ),
+                "Limit": page_size * 10,  # Over-fetch to compensate for filter
             }
             if next_token:
                 scan_kwargs["ExclusiveStartKey"] = _decode_pagination_token(next_token)
 
+            # Paginate scan until we have enough items or exhaust the table
             response = task_table.scan(**scan_kwargs)
             items = response.get("Items", [])
             last_evaluated_key = response.get("LastEvaluatedKey")
+
+            # If first scan didn't return enough, do one more pass
+            while len(items) < page_size and last_evaluated_key:
+                scan_kwargs["ExclusiveStartKey"] = last_evaluated_key
+                response = task_table.scan(**scan_kwargs)
+                items.extend(response.get("Items", []))
+                last_evaluated_key = response.get("LastEvaluatedKey")
 
         # Apply repo filter
         if repo_filter:
