@@ -98,6 +98,10 @@ def handler(event, context):
         "retried_task_ids": retried,
     }
 
+    # Phase 5: Orchestrator health assessment — manage CONFIG#dispatch_routing
+    orchestrator_health = _assess_orchestrator_health(table)
+    result["orchestrator_health"] = orchestrator_health
+
     if reaped or drift_fixes or redispatched:
         logger.warning(
             "Reaper healed: reaped=%d, drift_fixes=%d, redispatched=%d",
@@ -418,6 +422,105 @@ def _move_to_dead_letter(table, item: dict):
         "DEAD_LETTER: %s exhausted %d retries (repo=%s). Manual intervention required.",
         task_id, retry_count, repo,
     )
+
+
+def _assess_orchestrator_health(table) -> dict:
+    """Phase 5: Assess orchestrator health and update CONFIG#dispatch_routing.
+
+    Logic (based on observed task outcomes, not infrastructure checks):
+    - Count tasks with target_mode=distributed that COMPLETED in last 30 min
+    - Count tasks with target_mode=distributed that FAILED/DEAD_LETTER in last 30 min
+    - If success_count >= 1 and failure_rate < 50%: orchestrator_ready = true
+    - If failure_count >= 3 consecutive with zero successes: orchestrator_ready = false
+    - If no distributed tasks observed: leave state unchanged (no signal)
+
+    This creates a self-healing loop:
+    - Orchestrator starts working → reaper observes successes → sets ready=true
+    - Orchestrator breaks → reaper observes failures → sets ready=false → tasks downgrade
+    - No manual intervention needed at any point
+    """
+    now = datetime.now(timezone.utc)
+    window = now - timedelta(minutes=30)
+    window_iso = window.isoformat()
+
+    # Query recent COMPLETED tasks with target_mode=distributed
+    successes = 0
+    failures = 0
+
+    for status in ("COMPLETED",):
+        items = table.query(
+            IndexName="status-created-index",
+            KeyConditionExpression=Key("status").eq(status),
+        ).get("Items", [])
+        successes += sum(
+            1 for t in items
+            if t.get("target_mode") == "distributed"
+            and t.get("updated_at", "") >= window_iso
+        )
+
+    for status in ("FAILED", "DEAD_LETTER"):
+        items = table.query(
+            IndexName="status-created-index",
+            KeyConditionExpression=Key("status").eq(status),
+        ).get("Items", [])
+        failures += sum(
+            1 for t in items
+            if t.get("target_mode") == "distributed"
+            and t.get("updated_at", "") >= window_iso
+        )
+
+    total = successes + failures
+
+    # No distributed tasks observed — no signal, leave state unchanged
+    if total == 0:
+        return {"action": "no_signal", "successes": 0, "failures": 0}
+
+    # Read current state
+    config = table.get_item(Key={"task_id": "CONFIG#dispatch_routing"}).get("Item", {})
+    current_ready = config.get("orchestrator_ready", False)
+
+    # Decision logic
+    failure_rate = failures / total if total > 0 else 0
+    should_be_ready = successes >= 1 and failure_rate < 0.5
+    should_deregister = failures >= 3 and successes == 0
+
+    new_ready = current_ready
+    action = "no_change"
+
+    if should_be_ready and not current_ready:
+        new_ready = True
+        action = "registered"
+        logger.warning(
+            "Orchestrator REGISTERED: %d successes, %d failures (%.0f%% failure rate) in 30min window",
+            successes, failures, failure_rate * 100,
+        )
+    elif should_deregister and current_ready:
+        new_ready = False
+        action = "deregistered"
+        logger.error(
+            "Orchestrator DEREGISTERED: %d consecutive failures, 0 successes in 30min window",
+            failures,
+        )
+
+    # Update config if state changed
+    if new_ready != current_ready:
+        table.update_item(
+            Key={"task_id": "CONFIG#dispatch_routing"},
+            UpdateExpression="SET orchestrator_ready = :ready, updated_by = :by, updated_at = :now",
+            ExpressionAttributeValues={
+                ":ready": new_ready,
+                ":by": "reaper-health-assessment",
+                ":now": _now(),
+            },
+        )
+
+    return {
+        "action": action,
+        "orchestrator_ready": new_ready,
+        "successes_30m": successes,
+        "failures_30m": failures,
+        "failure_rate": round(failure_rate, 2),
+    }
 
 
 def _decrement_counter(table, repo: str):
