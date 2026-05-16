@@ -179,13 +179,14 @@ def _build_session_manager():
         from strands.session.s3_session_manager import S3SessionManager
         import boto3
 
+        # S3SessionManager requires session_id and bucket as positional args.
+        # We use a placeholder session_id here — the actual session_id is set
+        # per-request by the A2A protocol (workflow_id-based).
+        # The prefix isolates review sessions from other S3 content.
         session_mgr = S3SessionManager(
-            bucket_name=bucket,
+            session_id="a2a-review-default",
+            bucket=bucket,
             prefix="a2a-sessions/revisao/",
-            s3_client=boto3.client(
-                "s3",
-                region_name=os.environ.get("AWS_REGION", "us-east-1"),
-            ),
         )
         logger.info(
             "S3SessionManager configured for review agent: bucket=%s prefix=a2a-sessions/revisao/",
