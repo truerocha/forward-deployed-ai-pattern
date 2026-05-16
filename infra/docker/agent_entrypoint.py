@@ -519,8 +519,58 @@ def main():
         }
         logger.info("Reconstructed event from DynamoDB: repo=%s issue=#%s title=%s",
                     _repo, _issue_number, _title[:60])
-        result = orchestrator.handle_event(reconstructed_event)
-        logger.info("Result: %s", json.dumps(result, default=str))
+
+        # ─── Resilient Execution: Update DynamoDB on failure ─────────────
+        # Without this try/except, if handle_event() crashes (workspace setup,
+        # scope check, Bedrock timeout), the DynamoDB record stays IN_PROGRESS
+        # forever and the dashboard shows "workspace 14%" indefinitely.
+        # The reaper detects the stall but cannot distinguish "still running"
+        # from "container died silently".
+        try:
+            result = orchestrator.handle_event(reconstructed_event)
+            logger.info("Result: %s", json.dumps(result, default=str))
+
+            # Update DynamoDB with completion status
+            _completion_status = result.get("status", "completed") if isinstance(result, dict) else "completed"
+            _table.update_item(
+                Key={"task_id": _task_id},
+                UpdateExpression="SET current_stage = :stage, updated_at = :t",
+                ExpressionAttributeValues={
+                    ":stage": "completion",
+                    ":t": datetime.now(timezone.utc).isoformat(),
+                },
+            )
+        except Exception as _exec_err:
+            _err_msg = f"{type(_exec_err).__name__}: {str(_exec_err)[:400]}"
+            logger.error("Task %s FAILED during execution: %s", _task_id, _err_msg)
+
+            # Critical: mark task as FAILED in DynamoDB so dashboard shows the error
+            try:
+                _table.update_item(
+                    Key={"task_id": _task_id},
+                    UpdateExpression=(
+                        "SET #s = :s, current_stage = :stage, "
+                        "#err = :err, updated_at = :t, "
+                        "events = list_append(if_not_exists(events, :empty), :evt)"
+                    ),
+                    ExpressionAttributeNames={"#s": "status", "#err": "error"},
+                    ExpressionAttributeValues={
+                        ":s": "FAILED",
+                        ":stage": "execution_error",
+                        ":err": _err_msg,
+                        ":t": datetime.now(timezone.utc).isoformat(),
+                        ":empty": [],
+                        ":evt": [{
+                            "type": "error",
+                            "msg": f"Container execution failed: {_err_msg[:200]}",
+                            "ts": datetime.now(timezone.utc).isoformat(),
+                        }],
+                    },
+                )
+            except Exception as _ddb_err:
+                logger.error("CRITICAL: Failed to update DynamoDB after execution error: %s", str(_ddb_err)[:200])
+
+            sys.exit(1)
     else:
         logger.info("No task. Set TASK_SPEC, EVENTBRIDGE_EVENT, or EVENT_SOURCE+EVENT_ACTION.")
 
