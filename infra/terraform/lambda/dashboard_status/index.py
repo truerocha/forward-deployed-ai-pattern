@@ -479,6 +479,44 @@ def _handle_tasks(event, context):
             and not i.get("started_at")
         ]
 
+        # Enrich stuck tasks with actionable blocked reasons
+        dispatch_stuck_details = []
+        for stuck_task in dispatch_stuck[:10]:
+            retry_count = int(stuck_task.get("retry_count", 0))
+            target_mode = stuck_task.get("target_mode", "unknown")
+            error = stuck_task.get("error", "")
+            age_minutes = _compute_age_minutes(stuck_task.get("created_at", ""))
+
+            # Determine actionable reason
+            if retry_count >= 3:
+                reason = "Exhausted retries — reaper will dead-letter next cycle"
+                action = "Check ECS capacity and ECR image availability"
+            elif "dispatch_preflight_failed" in error:
+                reason = "ECR image missing — dispatch pre-flight blocked"
+                action = "Push orchestrator image to ECR or disable cognitive routing"
+            elif target_mode == "distributed" and retry_count > 0:
+                reason = f"Distributed dispatch failing (retry {retry_count}/3)"
+                action = "Verify ECR image exists and ECS has capacity"
+            elif target_mode == "monolith" and retry_count > 0:
+                reason = f"Monolith dispatch failing (retry {retry_count}/3)"
+                action = "Check ECS cluster capacity and task definition"
+            elif age_minutes > 30:
+                reason = "Stale dispatch — no agent ever started"
+                action = "Reaper will auto-heal; check CloudWatch for ECS errors"
+            else:
+                reason = "Awaiting ECS start (may be cold-starting)"
+                action = "Wait for next reaper cycle (5 min) or check ECS events"
+
+            dispatch_stuck_details.append({
+                "task_id": stuck_task.get("task_id", ""),
+                "title": stuck_task.get("title", "")[:60],
+                "reason": reason,
+                "action": action,
+                "retry_count": retry_count,
+                "target_mode": target_mode,
+                "age_minutes": age_minutes,
+            })
+
         # Build enriched task list with agent assignment
         tasks = []
         for item in sorted(items, key=lambda x: x.get("created_at", ""), reverse=True):
@@ -612,6 +650,7 @@ def _handle_tasks(event, context):
                 "stale_agents": stale_agents,
                 "dispatch_stuck": len(dispatch_stuck),
                 "dispatch_stuck_task_ids": [t.get("task_id", "") for t in dispatch_stuck[:5]],
+                "dispatch_stuck_details": dispatch_stuck_details,
             },
             "dora": _compute_dora_summary(items),
             "tasks": paginated_tasks,
@@ -1165,6 +1204,17 @@ def _compute_elapsed(item: dict) -> int:
         start = datetime.fromisoformat(start_field.replace("Z", "+00:00"))
         elapsed = (datetime.now(timezone.utc) - start).total_seconds() * 1000
         return int(elapsed)
+    except (ValueError, TypeError):
+        return 0
+
+
+def _compute_age_minutes(created_at: str) -> int:
+    """Compute task age in minutes from created_at timestamp."""
+    if not created_at:
+        return 0
+    try:
+        created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        return int((datetime.now(timezone.utc) - created).total_seconds() / 60)
     except (ValueError, TypeError):
         return 0
 

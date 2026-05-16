@@ -272,7 +272,7 @@ def _find_redispatch_eligible(table) -> list:
             if created_ts > stale_cutoff:
                 continue  # Too young — normal dispatch may still be in progress
 
-            # Check retry cap
+            # Check retry cap — dead-letter BEFORE attempting re-dispatch
             retry_count = int(item.get("retry_count", 0))
             if retry_count >= MAX_RETRIES:
                 # Exhausted retries — move to DEAD_LETTER (permanent failure)
