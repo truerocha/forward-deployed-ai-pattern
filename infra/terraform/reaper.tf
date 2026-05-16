@@ -32,8 +32,8 @@ resource "aws_iam_role" "reaper_lambda" {
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Action = "sts:AssumeRole"
-      Effect = "Allow"
+      Action    = "sts:AssumeRole"
+      Effect    = "Allow"
       Principal = { Service = "lambda.amazonaws.com" }
     }]
   })
@@ -45,19 +45,26 @@ resource "aws_iam_role_policy" "reaper_dynamodb" {
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = [
-        "dynamodb:Query",
-        "dynamodb:Scan",
-        "dynamodb:GetItem",
-        "dynamodb:UpdateItem",
-      ]
-      Resource = [
-        aws_dynamodb_table.task_queue.arn,
-        "${aws_dynamodb_table.task_queue.arn}/index/*",
-      ]
-    }]
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:Query",
+          "dynamodb:Scan",
+          "dynamodb:GetItem",
+          "dynamodb:UpdateItem",
+        ]
+        Resource = [
+          aws_dynamodb_table.task_queue.arn,
+          "${aws_dynamodb_table.task_queue.arn}/index/*",
+        ]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["events:PutEvents"]
+        Resource = [aws_cloudwatch_event_bus.factory.arn]
+      },
+    ]
   })
 }
 
@@ -73,15 +80,17 @@ resource "aws_lambda_function" "reaper" {
   role             = aws_iam_role.reaper_lambda.arn
   handler          = "index.handler"
   runtime          = "python3.12"
-  timeout          = 60
+  timeout          = 90
   memory_size      = 256
   filename         = data.archive_file.reaper.output_path
   source_code_hash = data.archive_file.reaper.output_base64sha256
 
   environment {
     variables = {
-      TASK_QUEUE_TABLE = aws_dynamodb_table.task_queue.name
-      ENVIRONMENT      = var.environment
+      TASK_QUEUE_TABLE   = aws_dynamodb_table.task_queue.name
+      EVENT_BUS_NAME     = aws_cloudwatch_event_bus.factory.name
+      ENVIRONMENT        = var.environment
+      REAPER_MAX_RETRIES = "3"
     }
   }
 
