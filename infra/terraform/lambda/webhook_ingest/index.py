@@ -140,6 +140,11 @@ def handler(event, context):
         task["depth_signals"] = "{}"
         # status stays READY — monolith picks it up directly
 
+    # ─── ERP Wave 1: Classify spec complexity (textual, ~5ms) ────
+    complexity_result = _classify_spec_complexity(task.get("spec_content", ""))
+    task["complexity"] = complexity_result["complexity"]
+    task["complexity_indicators"] = json.dumps(complexity_result["matched_indicators"])
+
     # Write task to DynamoDB
     table.put_item(Item=task)
 
@@ -191,10 +196,10 @@ def handler(event, context):
 
     elapsed_ms = int((time.time() - start_time) * 1000)
     logger.info(
-        "Task ingested: task_id=%s, title=%s, source=%s, depth=%.3f, target=%s, elapsed=%dms",
+        "Task ingested: task_id=%s, title=%s, source=%s, depth=%.3f, target=%s, complexity=%s, elapsed=%dms",
         task["task_id"], task["title"], task["source"],
         depth_result["depth"] if COGNITIVE_ROUTING_ENABLED else 0.0,
-        target_mode, elapsed_ms,
+        target_mode, task.get("complexity", "simple"), elapsed_ms,
     )
 
     return {
@@ -204,6 +209,7 @@ def handler(event, context):
             "status": task["status"],
             "target_mode": target_mode,
             "depth": depth_result["depth"] if COGNITIVE_ROUTING_ENABLED else 0.0,
+            "complexity": task.get("complexity", "simple"),
             "elapsed_ms": elapsed_ms,
         }),
     }
@@ -865,3 +871,60 @@ def _find_existing_task(table, issue_id: str) -> dict | None:
     except Exception as e:
         logger.warning("Deduplication check failed (proceeding with insert): %s", e)
         return None
+
+
+# ─── ERP Wave 1: Spec Complexity Classification ─────────────────
+
+# Indicators that suggest the task requires multi-step execution
+_EXECUTION_INDICATORS = {
+    "bash_commands": r"```bash\s*\n",
+    "pytest_execution": r"pytest\s+\S+",
+    "artifact_generation": r"git\s+add\s+\S+",
+    "sequential_gates": r"\*\*Gate\*\*\s*:",
+    "multi_part": r"###\s+Part\s+[A-Z]",
+    "script_execution": r"python3?\s+scripts/",
+    "dependency_chain": r"[A-Z]\d+.*\u2192.*[A-Z]\d+|then\s+[A-Z]\d+",
+    "step_numbering": r"####\s+[A-Z]\d+[\.\s:]",
+    "validation_markers": r"\*\*(?:Validation|Verify|Assert)\*\*\s*:",
+    "file_generation": r"(?:generate|create|write)\s+(?:artifacts?|files?)/",
+}
+
+_EXECUTION_THRESHOLD = 3
+
+
+def _classify_spec_complexity(spec_content: str) -> dict:
+    """Classify spec complexity based on textual indicators (~5ms).
+
+    Runs at Lambda time to enrich the task record with complexity metadata.
+    The ECS entrypoint uses this field to decide whether to use the
+    step-by-step executor (complexity=execution) or the standard pipeline.
+
+    Classification:
+      - "simple": No execution indicators (standard code gen)
+      - "standard": Some structure but not multi-step execution
+      - "execution": Multi-step with scripts, gates, sequential deps
+
+    Returns:
+        dict with 'complexity' and 'matched_indicators' fields.
+    """
+    if not spec_content:
+        return {"complexity": "simple", "matched_indicators": []}
+
+    matched = []
+    for name, pattern in _EXECUTION_INDICATORS.items():
+        if re.search(pattern, spec_content, re.IGNORECASE):
+            matched.append(name)
+
+    if len(matched) >= _EXECUTION_THRESHOLD:
+        complexity = "execution"
+    elif len(matched) >= 1:
+        complexity = "standard"
+    else:
+        complexity = "simple"
+
+    logger.info(
+        "ERP classification: complexity=%s indicators=%d matched=%s",
+        complexity, len(matched), matched,
+    )
+
+    return {"complexity": complexity, "matched_indicators": matched}

@@ -428,6 +428,53 @@ class Orchestrator:
                 if existing_catalog:
                     os.environ["CATALOG_PATH"] = existing_catalog
 
+        # ── Step 7.7: ERP Check (Execution Readiness Pipeline, Wave 1) ──
+        # If the task was classified as "execution" by the webhook_ingest Lambda,
+        # use the step-by-step executor instead of the standard agent pipeline.
+        # This handles multi-step tasks with scripts, gates, and sequential deps.
+        # Ref: Issue #146 (class of failure: execution tasks treated as simple)
+        existing_task_record = task_queue.get_task(task_id) or {}
+        if existing_task_record.get("complexity") == "execution" and workspace.ready:
+            from src.core.execution.erp_integration import execute_with_erp
+
+            task_queue.append_task_event(
+                task_id, "system",
+                "ERP: task classified as execution — using step-by-step executor",
+                phase="execution",
+            )
+
+            erp_result = execute_with_erp(
+                task_id=task_id,
+                spec_content=existing_task_record.get("spec_content", ""),
+                workspace_dir=workspace.repo_path,
+                stage_callback=task_queue.update_task_stage,
+                event_callback=task_queue.append_task_event,
+            )
+
+            if erp_result is not None:
+                # ERP handled the task — skip standard pipeline
+                result = erp_result
+                # Jump directly to PR creation (Step 9.5)
+                if result.get("status") == "completed":
+                    task_queue.update_task_stage(task_id, "review")
+                    task_queue.append_task_event(
+                        task_id, "system", "ERP complete — pushing branch and creating PR...",
+                        phase="review",
+                    )
+                    pr_url = push_and_create_pr(workspace)
+                    if pr_url:
+                        task_queue.update_task_stage(task_id, "completion", pr_url=pr_url)
+                        task_queue.append_task_event(task_id, "system", f"PR created: {pr_url}", phase="review")
+                        task_queue.complete_task_with_retry(task_id, result.get("output", "ERP completed"))
+                    else:
+                        task_queue.update_task_stage(task_id, "completion")
+                        task_queue.complete_task_with_retry(task_id, result.get("output", "ERP completed (no PR)"))
+                else:
+                    task_queue.fail_task_with_retry(task_id, result.get("error", "ERP execution failed"))
+
+                return result
+            # else: ERP returned None (no steps parsed) — fall through to standard pipeline
+
         # ── Step 8: Execute Pipeline (inner loop with plan tracking) ──
         task_queue.update_task_stage(task_id, "reconnaissance")
 
