@@ -125,6 +125,19 @@ export default function App() {
                   _sortKey: ev.ts || '',
                 });
               }
+            } else if (task.status === 'running') {
+              // Task is running but no events yet — show status so operator has visibility
+              const stageLabel = task.current_stage || 'starting';
+              const progress = task.stage_progress ? `${task.stage_progress.percent}%` : '';
+              apiLogs.push({
+                id: `${task.task_id}-status-${apiLogs.length}`,
+                timestamp: task.updated_at ? new Date(task.updated_at).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '',
+                agentId: task.task_id,
+                agentName: task.agent?.name || 'Orchestrator',
+                message: `[${task.task_id.slice(-8)}] ▶ Running — stage: ${stageLabel} ${progress}`.trim(),
+                type: 'working',
+                _sortKey: task.updated_at || '',
+              });
             }
           }
           apiLogs.sort((a: any, b: any) => (b._sortKey || '').localeCompare(a._sortKey || ''));

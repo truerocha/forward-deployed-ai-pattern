@@ -473,8 +473,12 @@ class AgentRouter:
 
     @staticmethod
     def _extract_checklist(body: str, section_name: str) -> list[str]:
-        """Extract checklist items (- [ ] item) from a section."""
-        pattern = rf"###\s+{re.escape(section_name)}\s*\n+(.+?)(?=\n###|\Z)"
+        """Extract checklist items (- [ ] item) from a section.
+
+        Supports both ## and ### heading levels (GitHub issue templates use ##,
+        factory-task YAML template uses ###).
+        """
+        pattern = rf"#{2,3}\s+{re.escape(section_name)}\s*\n+(.+?)(?=\n#{2,3}\s|\Z)"
         match = re.search(pattern, body, re.DOTALL)
         if match:
             items = re.findall(r"-\s*\[[ x]\]\s*(.+)", match.group(1))
@@ -483,8 +487,11 @@ class AgentRouter:
 
     @staticmethod
     def _extract_checkboxes(body: str, section_name: str) -> list[str]:
-        """Extract checked checkbox items (- [X] item) from a section."""
-        pattern = rf"###\s+{re.escape(section_name)}\s*\n+(.+?)(?=\n###|\Z)"
+        """Extract checked checkbox items (- [X] item) from a section.
+
+        Supports both ## and ### heading levels.
+        """
+        pattern = rf"#{2,3}\s+{re.escape(section_name)}\s*\n+(.+?)(?=\n#{2,3}\s|\Z)"
         match = re.search(pattern, body, re.DOTALL)
         if match:
             items = re.findall(r"-\s*\[[xX]\]\s*(.+)", match.group(1))

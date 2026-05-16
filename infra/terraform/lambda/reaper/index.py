@@ -351,23 +351,29 @@ def _redispatch_eligible(table, eligible_tasks: list) -> list:
             continue
 
         # Step 2: Emit dispatch event to EventBridge
+        # Sanitize fields to prevent InputTransformer JSON breakage (ADR-036)
         try:
+            from shared.eventbridge_sanitizer import sanitize_dispatch_detail
+
+            raw_detail = {
+                "task_id": task_id,
+                "target_mode": target_mode,
+                "depth": float(item.get("depth", 0)),
+                "repo": repo,
+                "issue_id": item.get("issue_id", ""),
+                "title": item.get("title", ""),
+                "priority": item.get("priority", "P2"),
+                "retry_count": current_retry + 1,
+                "redispatch_source": "reaper",
+            }
+            sanitized_detail = sanitize_dispatch_detail(raw_detail)
+
             eventbridge.put_events(
                 Entries=[{
                     "Source": "fde.internal",
                     "DetailType": "task.dispatched",
                     "EventBusName": EVENT_BUS_NAME,
-                    "Detail": json.dumps({
-                        "task_id": task_id,
-                        "target_mode": target_mode,
-                        "depth": float(item.get("depth", 0)),
-                        "repo": repo,
-                        "issue_id": item.get("issue_id", ""),
-                        "title": item.get("title", ""),
-                        "priority": item.get("priority", "P2"),
-                        "retry_count": current_retry + 1,
-                        "redispatch_source": "reaper",
-                    }),
+                    "Detail": json.dumps(sanitized_detail),
                 }]
             )
             redispatched.append(task_id)

@@ -55,12 +55,47 @@ resource "aws_cloudwatch_event_rule" "dispatch_distributed" {
   tags = { Component = "cognitive-router", DispatchTarget = "strands-agent" }
 }
 
+# ─── Dead Letter Queue for Target Invocation Failures ────────────
+# Captures events where the InputTransformer or ECS RunTask fails silently.
+# Without this, failed target invocations are lost with no observability.
+# Well-Architected: REL 11 — Use fault isolation to protect your workload
+
+resource "aws_sqs_queue" "dispatch_dlq" {
+  name                      = "${local.name_prefix}-dispatch-dlq"
+  message_retention_seconds = 1209600 # 14 days
+  tags                      = { Component = "cognitive-router", Purpose = "dead-letter" }
+}
+
+resource "aws_sqs_queue_policy" "dispatch_dlq_policy" {
+  queue_url = aws_sqs_queue.dispatch_dlq.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid       = "AllowEventBridgeSendMessage"
+      Effect    = "Allow"
+      Principal = { Service = "events.amazonaws.com" }
+      Action    = "sqs:SendMessage"
+      Resource  = aws_sqs_queue.dispatch_dlq.arn
+      Condition = {
+        ArnEquals = {
+          "aws:SourceArn" = aws_cloudwatch_event_rule.dispatch_distributed.arn
+        }
+      }
+    }]
+  })
+}
+
 resource "aws_cloudwatch_event_target" "dispatch_distributed_ecs" {
   rule           = aws_cloudwatch_event_rule.dispatch_distributed.name
   event_bus_name = aws_cloudwatch_event_bus.factory.name
   target_id      = "dispatch-orchestrator"
   arn            = aws_ecs_cluster.factory.arn
   role_arn       = aws_iam_role.eventbridge_ecs.arn
+
+  # Dead letter queue — captures events where InputTransformer or RunTask fails
+  dead_letter_config {
+    arn = aws_sqs_queue.dispatch_dlq.arn
+  }
 
   ecs_target {
     task_count          = 1
@@ -201,4 +236,27 @@ resource "aws_cloudwatch_metric_alarm" "cognitive_router_latency" {
   }
 
   tags = { Component = "cognitive-router" }
+}
+
+# ─── CloudWatch Alarm: Dispatch DLQ Depth ────────────────────────
+# Alert if ANY messages land in the DLQ — indicates InputTransformer
+# or ECS RunTask failures that bypass the sanitization layer.
+# Well-Architected: OPS 8 — Understand operational health
+
+resource "aws_cloudwatch_metric_alarm" "dispatch_dlq_depth" {
+  alarm_name          = "${local.name_prefix}-dispatch-dlq-messages"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "ApproximateNumberOfMessagesVisible"
+  namespace           = "AWS/SQS"
+  period              = 60
+  statistic           = "Sum"
+  threshold           = 0
+  alarm_description   = "Dispatch DLQ has messages — EventBridge target invocation failed (InputTransformer or RunTask)"
+
+  dimensions = {
+    QueueName = aws_sqs_queue.dispatch_dlq.name
+  }
+
+  tags = { Component = "cognitive-router", Severity = "high" }
 }

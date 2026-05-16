@@ -529,21 +529,29 @@ def _emit_dispatch_event(task: dict, depth_result: dict, target_mode: str) -> No
     monolith runs as fallback.
     """
     try:
+        # Sanitize all fields before emission — prevents InputTransformer JSON
+        # breakage from user-generated content (titles with quotes, newlines, etc.)
+        # See ADR-036 for root cause analysis and decision record.
+        from shared.eventbridge_sanitizer import sanitize_dispatch_detail
+
+        raw_detail = {
+            "task_id": task["task_id"],
+            "target_mode": target_mode,
+            "depth": depth_result["depth"],
+            "repo": task.get("repo", ""),
+            "issue_id": task.get("issue_id", ""),
+            "title": task.get("title", ""),
+            "priority": task.get("priority", "P2"),
+            "signals": depth_result["signals"],
+        }
+        sanitized_detail = sanitize_dispatch_detail(raw_detail)
+
         response = eventbridge.put_events(
             Entries=[{
                 "Source": "fde.internal",
                 "DetailType": "task.dispatched",
                 "EventBusName": EVENT_BUS_NAME,
-                "Detail": json.dumps({
-                    "task_id": task["task_id"],
-                    "target_mode": target_mode,
-                    "depth": depth_result["depth"],
-                    "repo": task.get("repo", ""),
-                    "issue_id": task.get("issue_id", ""),
-                    "title": task.get("title", ""),
-                    "priority": task.get("priority", "P2"),
-                    "signals": depth_result["signals"],
-                }),
+                "Detail": json.dumps(sanitized_detail),
             }]
         )
         # Validate response — put_events returns 200 even when entries fail

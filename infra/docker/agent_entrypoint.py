@@ -489,6 +489,17 @@ def main():
         _title = _task_item.get("title", os.environ.get("EVENT_ISSUE_TITLE", ""))
         _source = _task_item.get("source", "fde.github.webhook")
 
+        # Normalize source to EventBridge namespace format expected by the router.
+        # DynamoDB stores short form ("github") but router expects "fde.github.webhook".
+        # Fix: ADR-036 follow-up — source mismatch caused tasks to be skipped silently.
+        _SOURCE_NORMALIZATION = {
+            "github": "fde.github.webhook",
+            "gitlab": "fde.gitlab.webhook",
+            "asana": "fde.asana.webhook",
+            "direct": "fde.direct",
+        }
+        _source = _SOURCE_NORMALIZATION.get(_source, _source)
+
         reconstructed_event = {
             "source": _source,
             "detail-type": "issue.labeled",
@@ -498,7 +509,7 @@ def main():
                 "issue": {
                     "number": _issue_number,
                     "title": _title,
-                    "body": _task_item.get("body", ""),
+                    "body": _task_item.get("spec_content", _task_item.get("body", "")),
                     "labels": [{"name": "factory-ready"}],
                 },
                 "repository": {

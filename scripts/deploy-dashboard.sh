@@ -44,14 +44,16 @@ done
 
 echo "━━━ Deploy Dashboard ━━━"
 
-# 0. Optionally rebuild portal from source
-if [[ "$BUILD_FIRST" == "true" ]]; then
-  echo "  → Building portal from source ($PORTAL_SRC)..."
+# 0. Always rebuild portal from source to ensure dist/ matches current code
+echo "  → Building portal from source ($PORTAL_SRC)..."
+if [[ -d "$PORTAL_SRC" && -f "$PORTAL_SRC/package.json" ]]; then
   if ! (cd "$PORTAL_SRC" && npm run build); then
     echo "  ❌ Portal build failed"
     exit 1
   fi
   echo "  ✅ Portal built"
+else
+  echo "  ⚠️  Portal source not found at $PORTAL_SRC — using existing dist/"
 fi
 
 # Always use dist/ directly if it exists (avoids stale $DASHBOARD_DIR problem)

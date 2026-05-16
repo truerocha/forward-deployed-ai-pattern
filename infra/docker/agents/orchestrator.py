@@ -96,8 +96,24 @@ class Orchestrator:
         """
         decision = self._router.route_event(event)
 
+        # ── Early observability: emit event BEFORE any gate can reject ──
+        # This ensures the operator sees activity in the dashboard from the
+        # first moment, even if the task is rejected by scope/routing checks.
+        _early_task_id = (
+            decision.data_contract.get("task_id", "")
+            if decision.data_contract else ""
+        ) or event.get("detail", {}).get("issue", {}).get("number", "")
+
         if not decision.should_process:
             logger.info("Event skipped: %s", decision.skip_reason)
+            # Emit rejection event so dashboard shows WHY it was skipped
+            if _early_task_id:
+                task_queue.append_task_event(
+                    _early_task_id, "gate",
+                    f"⛔ Event skipped by router: {decision.skip_reason}",
+                    phase="intake", gate_name="routing", gate_result="skip",
+                )
+                task_queue.update_task_stage(_early_task_id, "completion")
             return {
                 "status": "skipped",
                 "reason": decision.skip_reason,
@@ -108,8 +124,18 @@ class Orchestrator:
 
         # ── Step 1: Scope Check ─────────────────────────────────
         scope_result = check_scope(data_contract)
+        task_id_for_events = data_contract.get("task_id", _early_task_id)
+
         if not scope_result.in_scope:
             logger.warning("Task rejected by scope check: %s", scope_result.rejection_reason)
+            # Emit rejection event so dashboard shows WHY it was rejected
+            if task_id_for_events:
+                task_queue.append_task_event(
+                    task_id_for_events, "gate",
+                    f"⛔ Scope check REJECTED: {scope_result.rejection_reason} — {scope_result.details}",
+                    phase="intake", gate_name="scope_check", gate_result="fail",
+                )
+                task_queue.update_task_stage(task_id_for_events, "completion")
             return {
                 "status": "rejected",
                 "reason": scope_result.rejection_reason,

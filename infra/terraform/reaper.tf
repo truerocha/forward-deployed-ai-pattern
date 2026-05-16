@@ -20,8 +20,24 @@ variable "reaper_enabled" {
 
 data "archive_file" "reaper" {
   type        = "zip"
-  source_file = "${path.module}/lambda/reaper/index.py"
   output_path = "${path.module}/.build/reaper.zip"
+
+  # Main Lambda handler
+  source {
+    content  = file("${path.module}/lambda/reaper/index.py")
+    filename = "index.py"
+  }
+
+  # Shared sanitization utilities (ADR-036)
+  source {
+    content  = file("${path.module}/lambda/shared/__init__.py")
+    filename = "shared/__init__.py"
+  }
+
+  source {
+    content  = file("${path.module}/lambda/shared/eventbridge_sanitizer.py")
+    filename = "shared/eventbridge_sanitizer.py"
+  }
 }
 
 # ─── IAM ─────────────────────────────────────────────────────────

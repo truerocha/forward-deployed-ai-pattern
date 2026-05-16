@@ -31,6 +31,17 @@ data "archive_file" "webhook_ingest_zip" {
     content  = file("${path.module}/lambda/webhook_ingest/index.py")
     filename = "index.py"
   }
+
+  # Shared sanitization utilities (ADR-036)
+  source {
+    content  = file("${path.module}/lambda/shared/__init__.py")
+    filename = "shared/__init__.py"
+  }
+
+  source {
+    content  = file("${path.module}/lambda/shared/eventbridge_sanitizer.py")
+    filename = "shared/eventbridge_sanitizer.py"
+  }
 }
 
 resource "aws_lambda_function" "webhook_ingest" {
