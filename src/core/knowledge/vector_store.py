@@ -214,7 +214,7 @@ class VectorStore:
             table.delete_item(
                 Key={
                     "project_id": self._project_id,
-                    "sk": f"vector#{entry_id}",
+                    "knowledge_key": f"vector#{entry_id}",
                 }
             )
             # Invalidate cache
@@ -239,7 +239,7 @@ class VectorStore:
             response = table.get_item(
                 Key={
                     "project_id": self._project_id,
-                    "sk": f"vector#{entry_id}",
+                    "knowledge_key": f"vector#{entry_id}",
                 }
             )
             item = response.get("Item")
@@ -293,7 +293,7 @@ class VectorStore:
             table.put_item(
                 Item={
                     "project_id": self._project_id,
-                    "sk": f"vector#{entry.entry_id}",
+                    "knowledge_key": f"vector#{entry.entry_id}",
                     "entry_id": entry.entry_id,
                     "text": entry.text,
                     "embedding": json.dumps(entry.embedding),
@@ -317,7 +317,7 @@ class VectorStore:
             response = table.query(
                 KeyConditionExpression=(
                     boto3.dynamodb.conditions.Key("project_id").eq(self._project_id)
-                    & boto3.dynamodb.conditions.Key("sk").begins_with("vector#")
+                    & boto3.dynamodb.conditions.Key("knowledge_key").begins_with("vector#")
                 )
             )
 
@@ -329,7 +329,7 @@ class VectorStore:
                 response = table.query(
                     KeyConditionExpression=(
                         boto3.dynamodb.conditions.Key("project_id").eq(self._project_id)
-                        & boto3.dynamodb.conditions.Key("sk").begins_with("vector#")
+                        & boto3.dynamodb.conditions.Key("knowledge_key").begins_with("vector#")
                     ),
                     ExclusiveStartKey=response["LastEvaluatedKey"],
                 )

@@ -303,12 +303,12 @@ class IncrementalIndexer:
         table = dynamodb.Table(self._knowledge_table)
 
         try:
-            table.delete_item(Key={"project_id": self._project_id, "sk": f"callgraph#{file_path}"})
+            table.delete_item(Key={"project_id": self._project_id, "knowledge_key": f"callgraph#{file_path}"})
         except ClientError:
             pass
 
         try:
-            table.delete_item(Key={"project_id": self._project_id, "sk": f"description#{file_path}"})
+            table.delete_item(Key={"project_id": self._project_id, "knowledge_key": f"description#{file_path}"})
         except ClientError:
             pass
 

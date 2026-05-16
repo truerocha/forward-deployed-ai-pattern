@@ -166,7 +166,7 @@ class KnowledgeAnnotationStore:
             table.put_item(
                 Item={
                     "project_id": self._project_id,
-                    "sk": f"annotation#{annotation.module_path}",
+                    "knowledge_key": f"annotation#{annotation.module_path}",
                     "module_path": annotation.module_path,
                     "data": json.dumps(annotation.to_dict()),
                     "confidence": str(annotation.confidence),
@@ -213,7 +213,7 @@ class KnowledgeAnnotationStore:
             response = table.get_item(
                 Key={
                     "project_id": self._project_id,
-                    "sk": f"annotation#{module_path}",
+                    "knowledge_key": f"annotation#{module_path}",
                 }
             )
             item = response.get("Item")
@@ -267,7 +267,7 @@ class KnowledgeAnnotationStore:
             table.put_item(
                 Item={
                     "project_id": self._project_id,
-                    "sk": f"annotation#{module_path}",
+                    "knowledge_key": f"annotation#{module_path}",
                     "module_path": module_path,
                     "data": json.dumps(existing.to_dict()),
                     "confidence": str(existing.confidence),
@@ -302,7 +302,7 @@ class KnowledgeAnnotationStore:
             table.delete_item(
                 Key={
                     "project_id": self._project_id,
-                    "sk": f"annotation#{module_path}",
+                    "knowledge_key": f"annotation#{module_path}",
                 }
             )
             logger.info(
@@ -329,7 +329,7 @@ class KnowledgeAnnotationStore:
             response = table.query(
                 KeyConditionExpression=(
                     boto3.dynamodb.conditions.Key("project_id").eq(self._project_id)
-                    & boto3.dynamodb.conditions.Key("sk").begins_with("annotation#")
+                    & boto3.dynamodb.conditions.Key("knowledge_key").begins_with("annotation#")
                 )
             )
 
@@ -342,7 +342,7 @@ class KnowledgeAnnotationStore:
                 response = table.query(
                     KeyConditionExpression=(
                         boto3.dynamodb.conditions.Key("project_id").eq(self._project_id)
-                        & boto3.dynamodb.conditions.Key("sk").begins_with("annotation#")
+                        & boto3.dynamodb.conditions.Key("knowledge_key").begins_with("annotation#")
                     ),
                     ExclusiveStartKey=response["LastEvaluatedKey"],
                 )

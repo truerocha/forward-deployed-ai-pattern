@@ -419,7 +419,7 @@ class QueryAPI:
             response = table.get_item(
                 Key={
                     "project_id": self._project_id,
-                    "sk": f"callgraph#{module_path}",
+                    "knowledge_key": f"callgraph#{module_path}",
                 }
             )
             item = response.get("Item")
@@ -436,7 +436,7 @@ class QueryAPI:
             response = table.get_item(
                 Key={
                     "project_id": self._project_id,
-                    "sk": f"description#{module_path}",
+                    "knowledge_key": f"description#{module_path}",
                 }
             )
             item = response.get("Item")
@@ -452,7 +452,7 @@ class QueryAPI:
             response = table.query(
                 KeyConditionExpression=(
                     boto3.dynamodb.conditions.Key("project_id").eq(self._project_id)
-                    & boto3.dynamodb.conditions.Key("sk").begins_with("callgraph#")
+                    & boto3.dynamodb.conditions.Key("knowledge_key").begins_with("callgraph#")
                 )
             )
             for item in response.get("Items", []):
@@ -464,7 +464,7 @@ class QueryAPI:
                 response = table.query(
                     KeyConditionExpression=(
                         boto3.dynamodb.conditions.Key("project_id").eq(self._project_id)
-                        & boto3.dynamodb.conditions.Key("sk").begins_with("callgraph#")
+                        & boto3.dynamodb.conditions.Key("knowledge_key").begins_with("callgraph#")
                     ),
                     ExclusiveStartKey=response["LastEvaluatedKey"],
                 )
@@ -492,7 +492,7 @@ class QueryAPI:
             response = table.query(
                 KeyConditionExpression=(
                     boto3.dynamodb.conditions.Key("project_id").eq(self._project_id)
-                    & boto3.dynamodb.conditions.Key("sk").begins_with("vector#")
+                    & boto3.dynamodb.conditions.Key("knowledge_key").begins_with("vector#")
                 )
             )
 
@@ -508,7 +508,7 @@ class QueryAPI:
                 response = table.query(
                     KeyConditionExpression=(
                         boto3.dynamodb.conditions.Key("project_id").eq(self._project_id)
-                        & boto3.dynamodb.conditions.Key("sk").begins_with("vector#")
+                        & boto3.dynamodb.conditions.Key("knowledge_key").begins_with("vector#")
                     ),
                     ExclusiveStartKey=response["LastEvaluatedKey"],
                 )
@@ -545,7 +545,7 @@ class QueryAPI:
             response = table.query(
                 KeyConditionExpression=(
                     boto3.dynamodb.conditions.Key("project_id").eq(self._project_id)
-                    & boto3.dynamodb.conditions.Key("sk").begins_with("description#")
+                    & boto3.dynamodb.conditions.Key("knowledge_key").begins_with("description#")
                 )
             )
 

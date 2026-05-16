@@ -1,0 +1,29 @@
+FROM python:3.12-slim AS base
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl && rm -rf /var/lib/apt/lists/*
+
+COPY infra/docker/requirements-a2a.txt .
+RUN pip install --no-cache-dir -r requirements-a2a.txt
+
+# Copy A2A module and dependencies
+COPY src/core/a2a/ /app/src/core/a2a/
+COPY src/core/__init__.py /app/src/core/__init__.py
+COPY src/__init__.py /app/src/__init__.py
+
+RUN useradd -m -s /bin/bash agent
+USER agent
+
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
+
+# Default: research agent on port 9001
+# Override via A2A_AGENT_TYPE and A2A_PORT env vars in ECS task definition
+ENV A2A_AGENT_TYPE=pesquisa
+ENV A2A_PORT=9001
+
+EXPOSE 9001 9002 9003
+
+# Shell form to allow env var expansion in ENTRYPOINT
+CMD ["sh", "-c", "python3 -m src.core.a2a.servers.${A2A_AGENT_TYPE}_server"]

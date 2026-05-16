@@ -47,4 +47,4 @@ export interface SoftwareFactoryState {
   output?: string;
 }
 
-export type AppView = 'pipeline' | 'agents' | 'reasoning' | 'gates' | 'health' | 'registries' | 'cost' | 'observability' | 'history';
+export type AppView = 'pipeline' | 'agents' | 'reasoning' | 'gates' | 'health' | 'registries' | 'cost' | 'observability' | 'history' | 'a2a';

@@ -33,6 +33,7 @@ import { RegistriesView } from './views/RegistriesView';
 import { ObservabilityView } from './views/ObservabilityView';
 import { CostBreakdownView } from './views/CostBreakdownView';
 import { HistoryView } from './views/HistoryView';
+import { A2AView } from './views/A2AView';
 
 export default function App() {
   const { t, i18n } = useTranslation();
@@ -141,7 +142,7 @@ export default function App() {
   useEffect(() => {
     const handleHash = () => {
       const hash = window.location.hash.replace('#', '') as AppView;
-      if (['pipeline', 'agents', 'reasoning', 'gates', 'health', 'registries', 'cost', 'observability', 'history'].includes(hash)) {
+      if (['pipeline', 'agents', 'reasoning', 'gates', 'health', 'registries', 'cost', 'observability', 'history', 'a2a'].includes(hash)) {
         setActiveView(hash);
       }
     };
@@ -184,6 +185,7 @@ export default function App() {
     { type: 'link', text: t('nav.catalog'), href: '#registries' },
     { type: 'divider' },
     { type: 'link', text: 'Observability', href: '#observability', info: <Badge color="blue">METRICS</Badge> },
+    { type: 'link', text: 'A2A Protocol', href: '#a2a', info: <Badge color="blue">A2A</Badge> },
     { type: 'link', text: 'Cost Breakdown', href: '#cost', info: <Badge color="grey">COST</Badge> },
     { type: 'link', text: 'History', href: '#history', info: <Badge color="grey">ACTIVITY</Badge> },
   ];
@@ -192,7 +194,7 @@ export default function App() {
     event.preventDefault();
     const href = event.detail.href || '';
     const view = href.replace('#', '') as AppView;
-    if (['pipeline', 'agents', 'reasoning', 'gates', 'health', 'registries', 'cost', 'observability', 'history'].includes(view)) {
+    if (['pipeline', 'agents', 'reasoning', 'gates', 'health', 'registries', 'cost', 'observability', 'history', 'a2a'].includes(view)) {
       changeView(view);
     }
   };
@@ -248,6 +250,8 @@ export default function App() {
             factoryData={factoryData}
           />
         );
+      case 'a2a':
+        return <A2AView factoryData={factoryData} />;
       default:
         return (
           <PipelineView
@@ -270,6 +274,7 @@ export default function App() {
     history: 'History',
     cost: 'Cost Breakdown',
     observability: 'Observability',
+    a2a: 'A2A Protocol',
   };
 
   return (
