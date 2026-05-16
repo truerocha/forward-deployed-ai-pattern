@@ -64,7 +64,7 @@ resource "aws_cloudwatch_event_target" "dispatch_distributed_ecs" {
 
   ecs_target {
     task_count          = 1
-    task_definition_arn = module.ecs_distributed.orchestrator_task_definition_arn
+    task_definition_arn = aws_ecs_task_definition.strands_agent.arn
     launch_type         = "FARGATE"
     network_configuration {
       subnets          = module.vpc.private_subnet_ids
@@ -73,7 +73,9 @@ resource "aws_cloudwatch_event_target" "dispatch_distributed_ecs" {
     }
   }
 
-  # Pass task_id and depth as env vars to the orchestrator
+  # Pass task_id and depth as env vars to the strands-agent (monolith fallback)
+  # When orchestrator is ready: change task_definition_arn back to
+  # module.ecs_distributed.orchestrator_task_definition_arn and container name to "orchestrator"
   input_transformer {
     input_paths = {
       taskId     = "$.detail.task_id"
@@ -87,7 +89,7 @@ resource "aws_cloudwatch_event_target" "dispatch_distributed_ecs" {
     input_template = <<-TEMPLATE
       {
         "containerOverrides": [{
-          "name": "orchestrator",
+          "name": "strands-agent",
           "environment": [
             {"name": "TASK_ID", "value": "<taskId>"},
             {"name": "TARGET_MODE", "value": "<targetMode>"},
