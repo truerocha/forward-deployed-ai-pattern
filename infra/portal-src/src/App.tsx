@@ -319,7 +319,6 @@ export default function App() {
       <AppLayout
         navigation={
           <SideNavigation
-            header={{ text: t('app.title'), href: '#pipeline' }}
             activeHref={`#${activeView}`}
             items={navItems}
             onFollow={handleNavFollow}
