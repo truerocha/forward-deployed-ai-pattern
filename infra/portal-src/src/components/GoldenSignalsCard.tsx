@@ -55,6 +55,17 @@ interface GoldenSignalsHealth {
 interface GoldenSignalsCardProps {
   metrics: GoldenSignalsMetrics | null;
   health: GoldenSignalsHealth | null;
+  routingHealth?: {
+    orchestrator_ready: boolean;
+    circuit_state: string;
+    updated_by: string;
+    updated_at: string;
+    blast_radius?: {
+      detection_window_min: number;
+      max_failures_before_deregister: number;
+      max_tasks_affected: number;
+    };
+  } | null;
 }
 
 // ─── Signal Status Logic ────────────────────────────────────────
@@ -118,7 +129,7 @@ function extractCapacityPct(health: GoldenSignalsHealth | null): number {
 
 // ─── Component ──────────────────────────────────────────────────
 
-export const GoldenSignalsCard: React.FC<GoldenSignalsCardProps> = ({ metrics, health }) => {
+export const GoldenSignalsCard: React.FC<GoldenSignalsCardProps> = ({ metrics, health, routingHealth }) => {
   if (!metrics) return null;
 
   const dora = metrics.dora || { lead_time_avg_ms: 0, throughput_24h: 0, change_failure_rate_pct: 0, success_rate_pct: 0, level: 'Low' };
@@ -204,6 +215,26 @@ export const GoldenSignalsCard: React.FC<GoldenSignalsCardProps> = ({ metrics, h
             )}
           </SpaceBetween>
         </div>
+
+        {/* Signal 5: Routing Health (Circuit Breaker) */}
+        {routingHealth && (
+          <div data-testid="routing-status">
+            <Box variant="awsui-key-label">Routing</Box>
+            <SpaceBetween size="xxs">
+              <StatusIndicator type={routingHealth.circuit_state === 'closed' ? 'success' : 'warning'}>
+                {routingHealth.circuit_state === 'closed' ? 'Orchestrator active' : 'Monolith fallback'}
+              </StatusIndicator>
+              <Box fontSize="body-s" color="text-body-secondary">
+                Circuit: {routingHealth.circuit_state}
+              </Box>
+              {routingHealth.blast_radius && (
+                <Box fontSize="body-s" color="text-body-secondary">
+                  Blast radius: {routingHealth.blast_radius.max_tasks_affected} tasks max
+                </Box>
+              )}
+            </SpaceBetween>
+          </div>
+        )}
       </ColumnLayout>
     </Container>
   );

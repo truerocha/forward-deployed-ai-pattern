@@ -651,6 +651,25 @@ def _handle_tasks(event, context):
                 synthetic_key = {"task_id": {"S": last_item["task_id"]}}
                 response_next_token = _encode_pagination_token(synthetic_key)
 
+        # Read routing health from CONFIG#dispatch_routing for SRE Golden Signals
+        try:
+            routing_config = task_table.get_item(
+                Key={"task_id": "CONFIG#dispatch_routing"}
+            ).get("Item", {})
+            routing_health = {
+                "orchestrator_ready": routing_config.get("orchestrator_ready", False),
+                "updated_by": routing_config.get("updated_by", "unknown"),
+                "updated_at": routing_config.get("updated_at", ""),
+                "circuit_state": "closed" if routing_config.get("orchestrator_ready", False) else "open",
+                "blast_radius": {
+                    "detection_window_min": 10,
+                    "max_failures_before_deregister": 2,
+                    "max_tasks_affected": 2,
+                },
+            }
+        except Exception:
+            routing_health = {"orchestrator_ready": False, "circuit_state": "open", "error": "config_read_failed"}
+
         body = {
             "metrics": {
                 "active": active,
@@ -665,6 +684,7 @@ def _handle_tasks(event, context):
                 "dispatch_stuck_task_ids": [t.get("task_id", "") for t in dispatch_stuck[:5]],
                 "dispatch_stuck_details": dispatch_stuck_details,
             },
+            "routing_health": routing_health,
             "dora": _compute_dora_summary(items),
             "tasks": paginated_tasks,
             "pagination": {

@@ -81,7 +81,7 @@ export const ObservabilityView: React.FC<ObservabilityViewProps> = ({
     QualityGateCard: <QualityGateCard />,
     PipelineHealthCard: <PipelineHealthCard />,
     EvidenceConfidenceCard: <EvidenceConfidenceCard />,
-    GoldenSignalsCard: <GoldenSignalsCard metrics={factoryData?.metrics ? { ...factoryData.metrics, dora: factoryData.dora } : null} health={null} />,
+    GoldenSignalsCard: <GoldenSignalsCard metrics={factoryData?.metrics ? { ...factoryData.metrics, dora: factoryData.dora } : null} health={null} routingHealth={factoryData?.routing_health || null} />,
     CapacityCard: <CapacityCard />,
   };
 
