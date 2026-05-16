@@ -31,6 +31,7 @@ import uuid
 from typing import Any, Optional
 
 from src.core.a2a.agent_cards import AGENT_CARD_REGISTRY, list_cards
+from src.core.a2a.context_compressor import build_compressed_rework_payload
 from src.core.a2a.contracts import (
     RawContent,
     WorkflowContext,
@@ -44,6 +45,7 @@ from src.core.a2a.contracts import (
     FeedbackRevisao,
     RelatorioFinal,
 )
+from src.core.a2a.memory_manager import WorkflowMemoryManager
 from src.core.a2a.observability import (
     initialize_tracing,
     trace_a2a_invocation,
@@ -73,9 +75,11 @@ class SquadOrchestrator:
         escrita_endpoint: str | None = None,
         revisao_endpoint: str | None = None,
         state_manager: ResilientStateManager | None = None,
+        memory_manager: WorkflowMemoryManager | None = None,
         timeout: int = 120,
         max_attempts: int = 3,
         enable_tracing: bool = True,
+        enable_memory: bool = True,
         # Backward-compatible parameter name
         max_tentativas: int | None = None,
     ):
@@ -86,9 +90,11 @@ class SquadOrchestrator:
             escrita_endpoint: Engineering agent A2A endpoint.
             revisao_endpoint: Review agent A2A endpoint.
             state_manager: Resilient state manager (DynamoDB + SQS DLQ).
+            memory_manager: Cross-workflow memory manager (DynamoDB fde-{env}-memory).
             timeout: Default A2A invocation timeout in seconds.
             max_attempts: Maximum review feedback loops.
             enable_tracing: Whether to initialize OTel tracing.
+            enable_memory: Whether to enable cross-workflow memory recall/store.
             max_tentativas: Backward-compatible alias for max_attempts.
         """
         self._pesquisa_endpoint = pesquisa_endpoint or os.environ.get(
@@ -106,6 +112,12 @@ class SquadOrchestrator:
         # State management with resilience (retry + DLQ)
         self._state = state_manager or ResilientStateManager()
 
+        # Cross-workflow memory (learns from past outcomes)
+        self._enable_memory = enable_memory
+        self._memory = memory_manager or (
+            WorkflowMemoryManager() if enable_memory else None
+        )
+
         # Initialize distributed tracing
         if enable_tracing:
             initialize_tracing(
@@ -122,10 +134,11 @@ class SquadOrchestrator:
         )
 
         logger.info(
-            "SquadOrchestrator initialized: pesquisa=%s escrita=%s revisao=%s",
+            "SquadOrchestrator initialized: pesquisa=%s escrita=%s revisao=%s memory=%s",
             self._pesquisa_endpoint,
             self._escrita_endpoint,
             self._revisao_endpoint,
+            "enabled" if self._enable_memory else "disabled",
         )
 
     async def execute(
@@ -168,9 +181,27 @@ class SquadOrchestrator:
                 wf_id, context.current_node, context.review_attempts,
             )
         else:
+            # ─── Memory Recall (new workflows only) ──────────────────────
+            enriched_prompt = prompt
+            if self._enable_memory and self._memory:
+                try:
+                    memories = self._memory.recall_relevant(topic=prompt)
+                    if memories:
+                        memory_block = self._memory.format_memories_for_prompt(memories)
+                        enriched_prompt = f"{memory_block}\n\n{prompt}"
+                        logger.info(
+                            "[%s] Injected %d memory entries into prompt",
+                            wf_id, len(memories),
+                        )
+                except Exception as e:
+                    logger.warning(
+                        "[%s] Memory recall failed (non-blocking): %s",
+                        wf_id, str(e)[:100],
+                    )
+
             context = WorkflowContext(
                 workflow_id=wf_id,
-                user_input=prompt,
+                user_input=enriched_prompt,
                 max_attempts=self._max_attempts,
             )
 
@@ -193,6 +224,16 @@ class SquadOrchestrator:
             context.execution_metrics["metadata"] = metadata or {}
 
             self._state.mark_completed(wf_id, context)
+
+            # ─── Memory Store (persist outcome for future workflows) ─────
+            if self._enable_memory and self._memory:
+                try:
+                    self._memory.store_workflow_outcome(context, metadata=metadata)
+                except Exception as e:
+                    logger.warning(
+                        "[%s] Memory store failed (non-blocking): %s",
+                        wf_id, str(e)[:100],
+                    )
 
             logger.info(
                 "[%s] Workflow COMPLETED in %.1fs (attempts=%d)",
@@ -397,14 +438,17 @@ class SquadOrchestrator:
                 )
                 start = time.time()
 
+                # Build compressed payload to prevent context window explosion
+                compressed_payload = build_compressed_rework_payload(
+                    research=context.research_data,
+                    report=context.report,
+                    feedback=feedback,
+                )
+
                 with trace_a2a_invocation("escrita", "rework", self._escrita_endpoint):
                     response = await self._graph.engineering_agent.invoke(
                         task="Corrigir relatório com base no feedback da revisão",
-                        payload={
-                            "dados_originais": context.research_data.model_dump(),
-                            "relatorio_anterior": context.report.model_dump(),
-                            "feedback": feedback.model_dump(),
-                        },
+                        payload=compressed_payload,
                     )
 
                 context.report = FinalReport.model_validate(response)

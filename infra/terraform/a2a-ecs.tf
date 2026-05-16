@@ -128,6 +128,9 @@ resource "aws_ecs_task_definition" "a2a_agent" {
         { name = "BEDROCK_MODEL_ID", value = var.bedrock_model_id },
         { name = "A2A_STATE_TABLE", value = aws_dynamodb_table.a2a_workflow_state.name },
         { name = "KNOWLEDGE_TABLE", value = module.dynamodb_distributed.knowledge_table_name },
+        { name = "MEMORY_TABLE", value = module.dynamodb_distributed.memory_table_name },
+        { name = "A2A_SESSIONS_BUCKET", value = aws_s3_bucket.factory_artifacts.id },
+        { name = "PROJECT_ID", value = var.project_id },
         { name = "ENVIRONMENT", value = var.environment },
         { name = "LOG_LEVEL", value = var.environment == "prod" ? "WARNING" : "INFO" },
         # OTEL: traces to ADOT sidecar on localhost

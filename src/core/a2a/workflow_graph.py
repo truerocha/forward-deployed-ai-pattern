@@ -95,23 +95,24 @@ class A2AWorkflowGraph:
         self._review_agent = None
 
     def _get_a2a_agent(self, endpoint: str):
-        """Lazily create an A2AAgent proxy for the given endpoint.
+        """Lazily create an A2A agent proxy for the given endpoint.
 
-        The Strands SDK fetches the Agent Card from /.well-known/agent-card.json
-        on first invocation, discovering the agent's capabilities dynamically.
+        Uses the Strands SDK A2AExecutor (client-side) which communicates
+        with any A2A-compliant server via JSON-RPC over HTTP.
+        The executor fetches the Agent Card from /.well-known/agent-card.json
+        on first invocation, discovering capabilities dynamically.
+
+        Fallback chain:
+          1. strands.multiagent.a2a.executor.A2AExecutor (preferred — native Strands)
+          2. _MockA2AAgent (local dev without Strands installed)
         """
         try:
-            from a2a.client import A2AClient
-            return A2AClient(url=endpoint, timeout=self._timeout)
+            from strands.multiagent.a2a.executor import A2AExecutor
+            return A2AExecutor(url=endpoint, timeout=self._timeout)
         except ImportError:
-            try:
-                from strands.multiagent.a2a import A2AServer
-                # Fallback: if only server SDK available, use mock
-                raise ImportError("A2AClient not available")
-            except ImportError:
-                pass
             logger.warning(
-                "a2a.client not available — using mock A2A agent for endpoint %s",
+                "strands.multiagent.a2a.executor not available — using mock A2A agent for %s. "
+                "Install with: pip install strands-agents[a2a]",
                 endpoint,
             )
             return _MockA2AAgent(endpoint)

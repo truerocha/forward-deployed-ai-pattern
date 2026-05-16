@@ -105,3 +105,10 @@ variable "execution_mode" {
     error_message = "execution_mode must be 'monolith' or 'distributed'."
   }
 }
+
+# ─── A2A Memory & Session Management ────────────────────────────
+variable "project_id" {
+  description = "Project identifier for cross-workflow memory (DynamoDB PK in fde-{env}-memory table)"
+  type        = string
+  default     = "default"
+}

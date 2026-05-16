@@ -113,12 +113,19 @@ def create_review_server(
             temperature=0.2,  # Low temperature for consistent evaluation
         )
 
+        # Session manager for iterative review memory.
+        # Enables the reviewer to recall its own prior feedback within
+        # the same workflow's review cycle (max 3 iterations).
+        # Uses S3 with workflow-scoped session IDs for distributed safety.
+        session_manager = _build_session_manager()
+
         review_agent = Agent(
             model=model,
             system_prompt=REVIEWER_SYSTEM_PROMPT,
             tools=[],  # Reviewer is pure reasoning — no tools needed
             name=REVISAO_CARD["name"],
             description=REVISAO_CARD["description"],
+            session_manager=session_manager,
         )
 
         # Wrap in A2A Server
@@ -130,8 +137,9 @@ def create_review_server(
         )
 
         logger.info(
-            "Review A2A Server configured: %s:%d model=%s card=%s",
+            "Review A2A Server configured: %s:%d model=%s card=%s session=%s",
             host, port, _model_id, REVISAO_CARD["name"],
+            "s3" if session_manager else "none",
         )
         return server
 
@@ -141,6 +149,60 @@ def create_review_server(
             str(e),
         )
         raise
+
+
+def _build_session_manager():
+    """Build an S3SessionManager for iterative review memory.
+
+    The session manager persists conversation history in S3, enabling
+    the review agent to recall its prior feedback across iterations
+    within the same workflow. This avoids re-sending full feedback
+    history in the payload (complementary to context_compressor).
+
+    Session isolation:
+      - Bucket: fde-{env}-artifacts (existing bucket from infra)
+      - Prefix: a2a-sessions/revisao/
+      - Session ID: Set per-request by the orchestrator via workflow_id
+
+    Falls back to None (stateless) if S3SessionManager is not available
+    or if the S3 bucket is not configured.
+
+    Returns:
+        S3SessionManager instance or None.
+    """
+    bucket = os.environ.get("A2A_SESSIONS_BUCKET", "")
+    if not bucket:
+        logger.info("A2A_SESSIONS_BUCKET not set — review agent will be stateless")
+        return None
+
+    try:
+        from strands.session.s3_session_manager import S3SessionManager
+        import boto3
+
+        session_mgr = S3SessionManager(
+            bucket_name=bucket,
+            prefix="a2a-sessions/revisao/",
+            s3_client=boto3.client(
+                "s3",
+                region_name=os.environ.get("AWS_REGION", "us-east-1"),
+            ),
+        )
+        logger.info(
+            "S3SessionManager configured for review agent: bucket=%s prefix=a2a-sessions/revisao/",
+            bucket,
+        )
+        return session_mgr
+
+    except ImportError:
+        logger.warning(
+            "strands.session.s3_session_manager not available — review agent will be stateless"
+        )
+        return None
+    except Exception as e:
+        logger.warning(
+            "Failed to initialize S3SessionManager (non-blocking): %s", str(e)[:100]
+        )
+        return None
 
 
 def main():
