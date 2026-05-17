@@ -24,6 +24,7 @@ import ExpandableSection from '@cloudscape-design/components/expandable-section'
 
 import { LogEntry } from '../types';
 import { useTranslation } from 'react-i18next';
+import { AgentAvatar } from '../components/AgentAvatar';
 
 interface ReasoningViewProps {
   logs: LogEntry[];
@@ -134,8 +135,13 @@ const columnDefinitions: TableProps.ColumnDefinition<LogEntry>[] = [
   {
     id: 'agent',
     header: 'Agent',
-    cell: (item) => <Box fontWeight="bold" fontSize="body-s">{item.agentName}</Box>,
-    width: 140,
+    cell: (item) => (
+      <SpaceBetween direction="horizontal" size="xs" alignItems="center">
+        <AgentAvatar agentName={item.agentName} size="s" />
+        <Box fontWeight="bold" fontSize="body-s">{item.agentName}</Box>
+      </SpaceBetween>
+    ),
+    width: 180,
   },
   {
     id: 'message',

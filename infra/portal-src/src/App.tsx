@@ -353,6 +353,7 @@ export default function App() {
           />
         }
         content={renderContent()}
+        contentType={activeView === 'pipeline' || activeView === 'history' ? 'table' : activeView === 'observability' ? 'dashboard' : 'default'}
         toolsHide={true}
         headerSelector="#top-nav"
         ariaLabels={{
