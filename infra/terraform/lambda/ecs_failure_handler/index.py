@@ -97,6 +97,14 @@ def _handle_ecs_state_change(event):
 
     if task_id:
         _update_task_with_failure(task_id, stopped_reason, stop_code)
+
+        # ── Retry for transient infrastructure failures (EFS mount timeout) ──
+        # ECS Fargate has a known race condition where EFS mount attempts happen
+        # before ENI has full L3 connectivity. This is transient — retry succeeds.
+        # Max 3 retries with exponential backoff via re-dispatch.
+        # Ref: https://docs.aws.amazon.com/AmazonECS/latest/developerguide/resource-initialization-error.html
+        if stop_code == "TaskFailedToStart":
+            _attempt_redispatch(task_id, stopped_reason)
     else:
         _mark_stuck_tasks_as_failed(stopped_reason)
 
@@ -225,10 +233,22 @@ def _handle_stuck_detection(event):
 
 
 def _extract_task_id_from_overrides(detail):
-    """Try to extract the task_id from ECS task environment overrides."""
+    """Try to extract the task_id from ECS task environment overrides.
+
+    Supports two formats:
+      1. InputTransformer format (cognitive_router.tf dispatch rules):
+         env: TASK_ID=TASK-xxx (direct, no parsing needed)
+      2. Legacy format (original ALM rules):
+         env: EVENTBRIDGE_EVENT={...} (requires JSON parsing + DynamoDB lookup)
+    """
     overrides = detail.get("overrides", {})
     for container in overrides.get("containerOverrides", []):
         for env in container.get("environment", []):
+            # Format 1: Direct TASK_ID from InputTransformer (dispatch_distributed rule)
+            if env.get("name") == "TASK_ID" and env.get("value", "").startswith("TASK-"):
+                return env["value"]
+
+            # Format 2: Legacy EVENTBRIDGE_EVENT (original ALM rules)
             if env.get("name") == "EVENTBRIDGE_EVENT":
                 try:
                     event_data = json.loads(env.get("value", "{}"))
@@ -332,3 +352,101 @@ def _compute_stuck_minutes(updated_at):
         return int((datetime.now(timezone.utc) - updated).total_seconds() / 60)
     except (ValueError, TypeError):
         return 0
+
+
+# ─── Retry for TaskFailedToStart (EFS mount race condition) ──────────
+
+MAX_INFRA_RETRIES = 3
+EVENT_BUS_NAME = os.environ.get("EVENT_BUS_NAME", "fde-dev-factory")
+eventbridge = boto3.client("events", region_name=REGION)
+
+
+def _attempt_redispatch(task_id: str, stopped_reason: str) -> None:
+    """Re-dispatch a task that failed due to transient infrastructure errors.
+
+    Only retries for TaskFailedToStart (EFS mount timeout, ENI race, etc.).
+    Uses an atomic counter in DynamoDB to track retry attempts.
+    Re-emits fde.internal/task.dispatched to trigger the dispatch_distributed rule.
+
+    Well-Architected alignment:
+      REL 10: Use fault isolation to protect your workload
+      REL 11: Design your workload to withstand component failures
+    """
+    try:
+        # Atomic increment of retry counter
+        response = task_table.update_item(
+            Key={"task_id": task_id},
+            UpdateExpression="SET infra_retry_count = if_not_exists(infra_retry_count, :zero) + :one, "
+                           "current_stage = :stage, #s = :status, updated_at = :now",
+            ExpressionAttributeNames={"#s": "status"},
+            ExpressionAttributeValues={
+                ":zero": 0,
+                ":one": 1,
+                ":stage": "retrying",
+                ":status": "DISPATCHED",
+                ":now": datetime.now(timezone.utc).isoformat(),
+            },
+            ReturnValues="ALL_NEW",
+        )
+
+        retry_count = int(response["Attributes"].get("infra_retry_count", 1))
+        task_item = response["Attributes"]
+
+        if retry_count > MAX_INFRA_RETRIES:
+            logger.warning(
+                "Task %s exceeded max infra retries (%d/%d) — marking as FAILED",
+                task_id, retry_count, MAX_INFRA_RETRIES,
+            )
+            task_table.update_item(
+                Key={"task_id": task_id},
+                UpdateExpression="SET #s = :status, current_stage = :stage, #e = :error",
+                ExpressionAttributeNames={"#s": "status", "#e": "error"},
+                ExpressionAttributeValues={
+                    ":status": "FAILED",
+                    ":stage": "failed",
+                    ":error": f"Infrastructure failure after {MAX_INFRA_RETRIES} retries: {stopped_reason[:200]}",
+                },
+            )
+            _append_event(
+                task_id, "error",
+                f"❌ Task failed permanently after {MAX_INFRA_RETRIES} infra retries: {stopped_reason[:100]}",
+            )
+            return
+
+        # Re-dispatch via EventBridge (same event format as webhook_ingest)
+        repo = task_item.get("repo", "")
+        issue_id = task_item.get("issue_id", "")
+        title = task_item.get("title", "")
+        depth = task_item.get("depth", "0.5")
+
+        eventbridge.put_events(
+            Entries=[{
+                "Source": "fde.internal",
+                "DetailType": "task.dispatched",
+                "EventBusName": EVENT_BUS_NAME,
+                "Detail": json.dumps({
+                    "task_id": task_id,
+                    "target_mode": "distributed",
+                    "depth": str(depth),
+                    "repo": repo,
+                    "issue_id": issue_id,
+                    "title": title,
+                    "priority": "normal",
+                    "retry_attempt": retry_count,
+                }),
+            }]
+        )
+
+        _append_event(
+            task_id, "system",
+            f"♻️ Infra retry {retry_count}/{MAX_INFRA_RETRIES}: re-dispatched after TaskFailedToStart "
+            f"({stopped_reason[:80]})",
+        )
+
+        logger.info(
+            "Re-dispatched task %s (retry %d/%d) after TaskFailedToStart",
+            task_id, retry_count, MAX_INFRA_RETRIES,
+        )
+
+    except Exception as e:
+        logger.error("Failed to re-dispatch task %s: %s", task_id, str(e)[:200])
