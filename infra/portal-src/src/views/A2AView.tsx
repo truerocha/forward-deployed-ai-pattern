@@ -136,7 +136,7 @@ export const A2AView: React.FC<A2AViewProps> = ({ factoryData }) => {
 
     return (
       <Grid
-        gridDefinition={visibleCards.map(() => ({ colspan: { l: 6, m: 6, default: 12 } }))}
+        gridDefinition={visibleCards.map(() => ({ colspan: { l: 4, m: 6, default: 12 } }))}
       >
         {visibleCards.map((cardName) => {
           const card = cardRegistry[cardName];
