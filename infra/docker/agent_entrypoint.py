@@ -576,8 +576,10 @@ def main():
             _completion_status = result.get("status", "completed") if isinstance(result, dict) else "completed"
             _table.update_item(
                 Key={"task_id": _task_id},
-                UpdateExpression="SET current_stage = :stage, updated_at = :t",
+                UpdateExpression="SET #s = :status, current_stage = :stage, updated_at = :t",
+                ExpressionAttributeNames={"#s": "status"},
                 ExpressionAttributeValues={
+                    ":status": "COMPLETED",
                     ":stage": "completion",
                     ":t": datetime.now(timezone.utc).isoformat(),
                 },
@@ -733,8 +735,10 @@ def main():
 
                 _table_pull.update_item(
                     Key={"task_id": _task_id},
-                    UpdateExpression="SET current_stage = :stage, updated_at = :t",
+                    UpdateExpression="SET #s = :status, current_stage = :stage, updated_at = :t",
+                    ExpressionAttributeNames={"#s": "status"},
                     ExpressionAttributeValues={
+                        ":status": "COMPLETED",
                         ":stage": "completion",
                         ":t": datetime.now(timezone.utc).isoformat(),
                     },
