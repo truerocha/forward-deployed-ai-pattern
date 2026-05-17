@@ -53,7 +53,25 @@ interface PipelineHealthCardProps {
 }
 
 export const PipelineHealthCard: React.FC<PipelineHealthCardProps> = ({ data }) => {
-  const d = data || SYNTHETIC_DATA;
+  if (!data) {
+    return (
+      <Container
+        header={
+          <Header variant="h3" description="Process trace funnel + timing">
+            Pipeline Health
+          </Header>
+        }
+      >
+        <Box textAlign="center" padding="l" color="inherit">
+          <StatusIndicator type="pending">
+            No pipeline traces available — data populates after A2A workflow execution
+          </StatusIndicator>
+        </Box>
+      </Container>
+    );
+  }
+
+  const d = data;
   const maxInput = d.steps[0]?.inputCount || 1;
 
   return (
