@@ -79,7 +79,14 @@ const columnDefinitions: TableProps.ColumnDefinition<any>[] = [
         <ProgressBar
           value={item.stage_progress.percent || 0}
           variant="standalone"
-          additionalInfo={`${item.stage_progress.current}/${item.stage_progress.total}`}
+          additionalInfo={item.current_stage ? item.current_stage.replace(/_/g, ' ') : undefined}
+        />
+      ) : item.current_stage ? (
+        <ProgressBar
+          value={item.status === 'COMPLETED' || item.status === 'completed' ? 100 : 50}
+          variant="standalone"
+          additionalInfo={item.current_stage.replace(/_/g, ' ')}
+          status={item.status === 'FAILED' || item.status === 'failed' ? 'error' : undefined}
         />
       ) : <Box>—</Box>
     ),
