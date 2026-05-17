@@ -693,8 +693,8 @@ function mapFromTaskEvents(data: DashboardData): Agent[] {
 
   const recentTasks = [...tasks]
     .filter((t) => t.events?.length > 0)
-    .sort((a, b) => (b.events?.[b.events.length - 1]?.ts || '').localeCompare(a.events?.[a.events.length - 1]?.ts || ''))
-    .slice(0, 5);
+    .sort((a, b) => (b.updated_at || b.created_at || '').localeCompare(a.updated_at || a.created_at || ''))
+    .slice(0, 1);
 
   for (const task of recentTasks) {
     if (!task.events) continue;
