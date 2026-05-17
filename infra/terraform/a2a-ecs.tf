@@ -109,11 +109,35 @@ resource "aws_ecs_task_definition" "a2a_agent" {
   execution_role_arn       = aws_iam_role.ecs_task_execution.arn
   task_role_arn            = aws_iam_role.ecs_task.arn
 
+  # EFS volume for workspace persistence — standard for all FDE containers.
+  # Available immediately on container start (no ENI dependency for local writes).
+  # Ref: TASK-f49dbb7c lesson learned — all containers need local storage fallback.
+  volume {
+    name = "workspaces"
+
+    efs_volume_configuration {
+      file_system_id          = module.efs.file_system_id
+      transit_encryption      = "ENABLED"
+      authorization_config {
+        access_point_id = module.efs.access_point_id
+        iam             = "ENABLED"
+      }
+    }
+  }
+
   container_definitions = jsonencode([
     {
       name      = "a2a-${each.key}"
       image     = "${aws_ecr_repository.strands_agent.repository_url}:a2a-${each.key}-latest"
       essential = true
+
+      mountPoints = [
+        {
+          sourceVolume  = "workspaces"
+          containerPath = "/workspaces"
+          readOnly      = false
+        }
+      ]
 
       portMappings = [{
         containerPort = each.value.port

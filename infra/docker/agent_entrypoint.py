@@ -258,8 +258,10 @@ def main():
     issues = validate_environment()
     if issues:
         for issue in issues:
-            logger.error("Environment issue: %s", issue)
-        sys.exit(1)
+            logger.warning("Environment issue (non-fatal, will surface at point of use): %s", issue)
+        # Do NOT sys.exit(1) — S3 may not be reachable during ENI attachment.
+        # Errors will surface with full context at artifact write time.
+        # Ref: TASK-f49dbb7c root cause — head_bucket() before network ready kills container silently.
 
     # Build all components
     registry = build_registry()

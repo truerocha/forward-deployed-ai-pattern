@@ -398,11 +398,35 @@ resource "aws_ecs_task_definition" "strands_agent" {
   execution_role_arn       = aws_iam_role.ecs_task_execution.arn
   task_role_arn            = aws_iam_role.ecs_task.arn
 
+  # EFS volume for workspace persistence (parity with distributed squad-agent)
+  # Available immediately on container start — no ENI dependency.
+  # Ref: TASK-f49dbb7c root cause — container needs local storage before S3 is reachable.
+  volume {
+    name = "workspaces"
+
+    efs_volume_configuration {
+      file_system_id          = module.efs.file_system_id
+      transit_encryption      = "ENABLED"
+      authorization_config {
+        access_point_id = module.efs.access_point_id
+        iam             = "ENABLED"
+      }
+    }
+  }
+
   container_definitions = jsonencode([
     {
       name      = "strands-agent"
       image     = "${aws_ecr_repository.strands_agent.repository_url}:latest"
       essential = true
+
+      mountPoints = [
+        {
+          sourceVolume  = "workspaces"
+          containerPath = "/workspaces"
+          readOnly      = false
+        }
+      ]
 
       environment = [
         { name = "AWS_REGION", value = local.region },
@@ -427,6 +451,8 @@ resource "aws_ecs_task_definition" "strands_agent" {
         { name = "FDE_AGENT_EMAIL", value = "fde-squad@factory.local" },
         # Concurrency: infrastructure-driven limit (not hardcoded in code)
         { name = "MAX_CONCURRENT_TASKS", value = tostring(var.max_concurrent_tasks) },
+        # EFS workspace: persistent storage available before S3/network ready
+        { name = "WORKSPACE_BASE", value = "/workspaces" },
       ]
 
       secrets = [

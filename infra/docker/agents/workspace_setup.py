@@ -32,6 +32,20 @@ logger = logging.getLogger("fde.workspace_setup")
 WORKSPACE_BASE = os.environ.get("WORKSPACE_BASE", "/tmp/workspace")
 
 
+def _get_workspace_dir(task_id: str = "") -> str:
+    """Get the workspace directory, partitioned by task_id for isolation.
+
+    Pattern: /workspaces/{task_id}/{repo_name}/
+    This prevents conflicts between concurrent tasks on the same repo
+    and enables EFS persistence across container restarts.
+
+    If task_id is not available, falls back to WORKSPACE_BASE directly.
+    """
+    if task_id:
+        return os.path.join(WORKSPACE_BASE, task_id)
+    return WORKSPACE_BASE
+
+
 @dataclass
 class WorkspaceContext:
     """Result of workspace setup — passed to agent tools."""
@@ -85,12 +99,14 @@ def setup_workspace(event_detail: dict, metadata: dict) -> WorkspaceContext:
             issue_number=issue_number, ready=False, error="GitHub PAT not available",
         )
 
-    # Clone the repo
-    repo_path = os.path.join(WORKSPACE_BASE, repo_full_name.split("/")[-1])
+    # Clone the repo — partitioned by task_id for EFS isolation
+    task_id = os.environ.get("TASK_ID", "") or metadata.get("task_id", "")
+    workspace_dir = _get_workspace_dir(task_id)
+    repo_path = os.path.join(workspace_dir, repo_full_name.split("/")[-1])
     clone_url = f"https://x-access-token:{github_pat}@github.com/{repo_full_name}.git"
 
     try:
-        os.makedirs(WORKSPACE_BASE, exist_ok=True)
+        os.makedirs(workspace_dir, exist_ok=True)
 
         # Clone (shallow for speed, depth=50 for branch context)
         result = subprocess.run(
