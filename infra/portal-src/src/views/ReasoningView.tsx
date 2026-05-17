@@ -30,6 +30,7 @@ import { AgentAvatar } from '../components/AgentAvatar';
 
 interface ReasoningViewProps {
   logs: LogEntry[];
+  currentStage?: string;
 }
 
 // Pipeline phases in execution order
@@ -44,66 +45,101 @@ const PIPELINE_PHASES = [
   { id: 'completion', label: 'Completion', description: 'Task finalized, metrics emitted' },
 ];
 
-function deriveStepsFromLogs(logs: LogEntry[]): { steps: any[]; activeIndex: number } {
-  // Determine which phases have been reached based on log messages
-  const phasesSeen = new Set<string>();
-  let currentPhase = 'intake';
-  let hasError = false;
-  let errorPhase = '';
+function deriveStepsFromLogs(logs: LogEntry[], currentStage?: string): { steps: any[]; activeIndex: number } {
+  // Primary: use currentStage from DynamoDB (authoritative, deterministic)
+  // Fallback: derive from log keywords (legacy, heuristic)
+  const STAGE_TO_PHASE_INDEX: Record<string, number> = {
+    'ingested': 0,
+    'ingestion': 0,
+    'warming': 1,
+    'container_start': 1,
+    'intake': 2,
+    'claimed': 2,
+    'workspace': 3,
+    'reconnaissance': 4,
+    'engineering': 5,
+    'review': 6,
+    'completion': 7,
+    'completed': 7,
+    'failed': -1,
+    'execution_error': -1,
+    'dispatch_failed': -1,
+  };
 
-  for (const log of logs) {
-    const msg = log.message.toLowerCase();
-    if (msg.includes('ingestion') || msg.includes('parsed') || msg.includes('schema validation') || msg.includes('dispatch')) {
-      phasesSeen.add('ingestion');
-      currentPhase = 'ingestion';
-    }
-    if (msg.includes('warming') || msg.includes('container ack') || msg.includes('container start') || msg.includes('provisioning')) {
-      phasesSeen.add('warming');
-      currentPhase = 'warming';
-    }
-    if (msg.includes('claimed') || msg.includes('scope') || msg.includes('routing') || msg.includes('autonomy')) {
-      phasesSeen.add('intake');
-      currentPhase = 'intake';
-    }
-    if (msg.includes('workspace') || msg.includes('cloned') || msg.includes('branch')) {
-      phasesSeen.add('workspace');
-      currentPhase = 'workspace';
-    }
-    if (msg.includes('reconnaissance') || msg.includes('constraint')) {
-      phasesSeen.add('reconnaissance');
-      currentPhase = 'reconnaissance';
-    }
-    if (msg.includes('engineering') || msg.includes('step_') || msg.includes('erp') || msg.includes('executing')) {
-      phasesSeen.add('engineering');
-      currentPhase = 'engineering';
-    }
-    if (msg.includes('push') || msg.includes('pr created') || msg.includes('pull request') || msg.includes('review')) {
-      phasesSeen.add('review');
-      currentPhase = 'review';
-    }
-    if (msg.includes('complete') || msg.includes('finished') || msg.includes('done')) {
-      phasesSeen.add('completion');
-      currentPhase = 'completion';
-    }
-    if (log.type === 'error') {
+  let activePhaseIndex = -1;
+  let hasError = false;
+  let errorPhaseIndex = -1;
+
+  // Use currentStage if available (authoritative from DynamoDB task record)
+  if (currentStage) {
+    const normalized = currentStage.toLowerCase().replace(/[- ]/g, '_');
+    activePhaseIndex = STAGE_TO_PHASE_INDEX[normalized] ?? -1;
+
+    // Check if it's an error state
+    if (normalized.includes('error') || normalized.includes('failed')) {
       hasError = true;
-      errorPhase = currentPhase;
+      // Find the last known good phase from logs for error positioning
+      errorPhaseIndex = activePhaseIndex >= 0 ? activePhaseIndex : 5; // default to engineering
     }
-    // Always mark ingestion as seen (first event implies ingestion happened)
-    phasesSeen.add('ingestion');
   }
 
-  const activePhaseIndex = PIPELINE_PHASES.findIndex(p => p.id === currentPhase);
+  // Fallback: derive from logs if currentStage didn't resolve
+  if (activePhaseIndex < 0 && !hasError) {
+    let currentPhase = 'intake';
+
+    for (const log of logs) {
+      const phase = log.phase || '';
+      const msg = log.message.toLowerCase();
+
+      if (phase === 'ingestion' || msg.includes('ingestion') || msg.includes('dispatch')) {
+        currentPhase = 'ingestion';
+      }
+      if (phase === 'warming' || msg.includes('warming') || msg.includes('container ack')) {
+        currentPhase = 'warming';
+      }
+      if (phase === 'intake' || msg.includes('claimed') || msg.includes('routing')) {
+        currentPhase = 'intake';
+      }
+      if (phase === 'workspace' || msg.includes('workspace') || msg.includes('cloned')) {
+        currentPhase = 'workspace';
+      }
+      if (phase === 'reconnaissance' || msg.includes('reconnaissance') || msg.includes('constraint')) {
+        currentPhase = 'reconnaissance';
+      }
+      if (phase === 'engineering' || phase.includes('swe-') || msg.includes('engineering') || msg.includes('executing')) {
+        currentPhase = 'engineering';
+      }
+      if (phase === 'review' || phase.includes('commiter') || msg.includes('push') || msg.includes('pull request')) {
+        currentPhase = 'review';
+      }
+      if (phase === 'completion' || msg.includes('complete') || msg.includes('finished')) {
+        currentPhase = 'completion';
+      }
+      if (log.type === 'error') {
+        hasError = true;
+      }
+    }
+
+    activePhaseIndex = PIPELINE_PHASES.findIndex(p => p.id === currentPhase);
+    if (hasError) errorPhaseIndex = activePhaseIndex;
+  }
+
+  // If still no resolution and we have logs, default to intake
+  if (activePhaseIndex < 0 && logs.length > 0) {
+    activePhaseIndex = 0;
+  }
+
+  const isCompleted = currentStage === 'completion' || currentStage === 'completed';
 
   const steps = PIPELINE_PHASES.map((phase, idx) => {
     let status: 'loading' | 'finished' | 'error' | 'disabled' = 'disabled';
 
-    if (hasError && phase.id === errorPhase) {
+    if (hasError && idx === errorPhaseIndex) {
       status = 'error';
     } else if (idx < activePhaseIndex) {
       status = 'finished';
     } else if (idx === activePhaseIndex) {
-      status = phasesSeen.has('completion') && phase.id === 'completion' ? 'finished' : 'loading';
+      status = isCompleted ? 'finished' : 'loading';
     }
 
     return {
@@ -241,12 +277,17 @@ function buildTreeData(logs: LogEntry[]) {
     });
 }
 
-export const ReasoningView: React.FC<ReasoningViewProps> = ({ logs }) => {
+export const ReasoningView: React.FC<ReasoningViewProps> = ({ logs, currentStage }) => {
   const { t } = useTranslation();
   const [expandedItems, setExpandedItems] = React.useState<string[]>([]);
 
-  const { steps } = useMemo(() => deriveStepsFromLogs(logs), [logs]);
+  const { steps, activeIndex } = useMemo(() => deriveStepsFromLogs(logs, currentStage), [logs, currentStage]);
   const treeData = useMemo(() => buildTreeData(logs), [logs]);
+
+  const totalSteps = PIPELINE_PHASES.length;
+  const currentStepNumber = activeIndex >= 0 ? activeIndex + 1 : 0;
+  const isComplete = currentStage === 'completion' || currentStage === 'completed';
+  const hasError = currentStage?.includes('error') || currentStage?.includes('failed');
 
   return (
     <SpaceBetween size="l">
@@ -255,13 +296,22 @@ export const ReasoningView: React.FC<ReasoningViewProps> = ({ logs }) => {
         header={
           <Header
             variant="h2"
-            description="Current pipeline execution phase"
+            description={
+              isComplete
+                ? `All ${totalSteps} stages completed`
+                : hasError
+                  ? `Failed at stage ${currentStepNumber} of ${totalSteps}`
+                  : currentStepNumber > 0
+                    ? `Stage ${currentStepNumber} of ${totalSteps} — ${PIPELINE_PHASES[activeIndex]?.label || 'Processing'}`
+                    : 'Awaiting pipeline start'
+            }
+            counter={currentStepNumber > 0 ? `(${currentStepNumber}/${totalSteps})` : undefined}
           >
             Pipeline Flow
           </Header>
         }
       >
-        {logs.length > 0 ? (
+        {logs.length > 0 || currentStage ? (
           <Steps steps={steps} />
         ) : (
           <Box textAlign="center" padding="l" color="inherit">

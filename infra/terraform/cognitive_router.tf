@@ -191,6 +191,63 @@ resource "aws_cloudwatch_event_target" "dispatch_monolith_log" {
   arn            = aws_cloudwatch_log_group.cognitive_router.arn
 }
 
+# ─── ECS Target for Monolith Dispatch (single-path formalization) ────────
+# In distributed mode, tasks with depth < 0.5 are routed here by the Lambda.
+# Previously these tasks relied on the always-on Target 2 (ALM rule → ECS),
+# which is now conditional (only active in monolith mode for rollback).
+# This target ensures monolith tasks get a container in distributed mode.
+#
+# Only active when execution_mode = "distributed" — in monolith mode,
+# the ALM rule targets handle everything directly.
+resource "aws_cloudwatch_event_target" "dispatch_monolith_ecs" {
+  count          = var.execution_mode == "distributed" ? 1 : 0
+  rule           = aws_cloudwatch_event_rule.dispatch_monolith.name
+  event_bus_name = aws_cloudwatch_event_bus.factory.name
+  target_id      = "dispatch-monolith-ecs"
+  arn            = aws_ecs_cluster.factory.arn
+  role_arn       = aws_iam_role.eventbridge_ecs.arn
+
+  ecs_target {
+    task_count          = 1
+    task_definition_arn = aws_ecs_task_definition.strands_agent.arn
+    launch_type         = "FARGATE"
+    network_configuration {
+      subnets          = module.vpc.private_subnet_ids
+      security_groups  = [module.vpc.ecs_security_group_id]
+      assign_public_ip = false
+    }
+  }
+
+  # Same InputTransformer as dispatch_distributed — passes task_id and metadata
+  input_transformer {
+    input_paths = {
+      taskId     = "$.detail.task_id"
+      targetMode = "$.detail.target_mode"
+      depth      = "$.detail.depth"
+      repo       = "$.detail.repo"
+      issueId    = "$.detail.issue_id"
+      title      = "$.detail.title"
+      priority   = "$.detail.priority"
+    }
+    input_template = <<-TEMPLATE
+      {
+        "containerOverrides": [{
+          "name": "strands-agent",
+          "environment": [
+            {"name": "TASK_ID", "value": "<taskId>"},
+            {"name": "TARGET_MODE", "value": "<targetMode>"},
+            {"name": "DEPTH", "value": "<depth>"},
+            {"name": "EVENT_REPO", "value": "<repo>"},
+            {"name": "EVENT_ISSUE_ID", "value": "<issueId>"},
+            {"name": "EVENT_ISSUE_TITLE", "value": "<title>"},
+            {"name": "EVENT_PRIORITY", "value": "<priority>"}
+          ]
+        }]
+      }
+    TEMPLATE
+  }
+}
+
 # ─── CloudWatch Log Group for Routing Decisions ──────────────────
 resource "aws_cloudwatch_log_group" "cognitive_router" {
   name              = "/aws/events/${local.name_prefix}-cognitive-router"

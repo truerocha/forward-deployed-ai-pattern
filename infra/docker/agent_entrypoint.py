@@ -164,24 +164,35 @@ def validate_environment() -> list[str]:
 def _should_defer_to_orchestrator() -> bool:
     """Check if the cognitive router already dispatched this task to the orchestrator.
 
-    Dual-path architecture (ADR-030):
-      - The webhook_ingest Lambda writes task_queue with status=DISPATCHED
-        when it routes a task to the distributed orchestrator (depth >= 0.5).
-      - This monolith container ALWAYS starts from the original EventBridge rule.
-      - If the task is DISPATCHED, the orchestrator is handling it — exit cleanly.
-      - If the task is READY, either:
-        a) Lambda decided monolith should handle it (depth < 0.5)
-        b) Lambda failed — we are the fallback
-      - In both cases, proceed with execution.
+    Single-path architecture (ADR-030 formalized):
+      In distributed mode (execution_mode=distributed), the ALM rules no longer
+      start ECS directly. All tasks flow through:
+        ALM rule → webhook_ingest Lambda → dispatch event → dispatch rule → ECS
 
-    Lookup strategy:
-      We identify the task by EVENT_REPO + EVENT_ISSUE_NUMBER (same key the Lambda uses).
+      This function is only relevant in monolith mode (rollback scenario) where
+      the ALM rules still have direct ECS targets AND the Lambda also dispatches.
+      In that case, two containers race and this check prevents duplicate execution.
+
+    Skip conditions (no race possible):
+      - TASK_ID is set → container was started by a dispatch rule (not ALM rule)
+      - No EVENT_REPO/EVENT_ISSUE_NUMBER → not started by ALM rule InputTransformer
+
+    Lookup strategy (monolith mode only):
+      We identify the task by EVENT_REPO + EVENT_ISSUE_NUMBER.
       Query the task_queue table for matching issue_id with status=DISPATCHED.
-      If found AND target_mode=distributed → defer.
+      If found AND target_mode=distributed → defer (orchestrator handling it).
       If found AND target_mode=monolith → proceed (we ARE the target).
 
     Timeout: 2s max. If DynamoDB is unreachable, proceed (safe fallback).
     """
+    # ─── Single-path fast exit ───────────────────────────────────────────
+    # If TASK_ID is present, this container was started by a dispatch rule
+    # (dispatch_distributed or dispatch_monolith). No race condition exists
+    # because the ALM rule ECS targets are disabled in distributed mode.
+    if os.environ.get("TASK_ID"):
+        logger.debug("Dual-path check skipped: TASK_ID present (direct dispatch, no race)")
+        return False
+
     task_queue_table = os.environ.get("TASK_QUEUE_TABLE", "")
     event_repo = os.environ.get("EVENT_REPO", "")
     event_issue_number = os.environ.get("EVENT_ISSUE_NUMBER", "")

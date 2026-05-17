@@ -130,3 +130,70 @@ Write task to DynamoDB, let a DynamoDB Stream trigger a routing Lambda.
 | Metrics table stale | 100ms timeout + fallback to metadata-only |
 | Orchestrator task def missing | Both always deployed by Terraform |
 | Double execution (monolith + orchestrator) | Monolith checks DISPATCHED status and exits |
+
+
+---
+
+## Status Update: Single-Path Formalization (2026-05-17)
+
+> Status: **Evolved** — Dual-path superseded by single-path + event-driven retry
+
+### What Changed
+
+The dual-path architecture (Target 2: monolith always-on) has been formalized into a
+**single-path architecture** with event-driven retry. The `ecs_failure_handler` Lambda
+provides equivalent resilience to the always-on monolith, without the cost and complexity
+of running two containers per task.
+
+### Updated Architecture (distributed mode)
+
+```
+EventBridge ALM rule fires on issue.labeled
+  │
+  └─ Target: webhook_ingest Lambda (cognitive router, ~200ms)
+      ├─ Writes task_queue (status: DISPATCHED, target_mode, depth)
+      ├─ Computes depth from: issue body + labels + metrics
+      ├─ Emits: fde.internal/task.dispatched {target_mode, depth, task_id}
+      └─ If Lambda fails → task stays READY → pull-based fallback claims it
+
+EventBridge dispatch rules (from fde.internal/task.dispatched):
+  ├─ Rule: target_mode=distributed → ECS strands-agent (TASK_ID in env)
+  ├─ Rule: target_mode=monolith → ECS strands-agent (TASK_ID in env)
+  └─ DLQ: failed target invocations → ecs_failure_handler reprocesses
+
+ECS Task Failure:
+  └─ ecs_failure_handler Lambda → retry up to 3x via re-dispatch event
+```
+
+### Migration Checklist (updated)
+
+1. ✅ Deploy enhanced Lambda with `COGNITIVE_ROUTING_ENABLED=true`
+2. ✅ Deploy cognitive_router.tf EventBridge rules
+3. ✅ ~~Update eventbridge.tf to always target monolith (dual-path)~~ → Conditional (monolith mode only)
+4. ✅ Update `agent_entrypoint.py` to check DISPATCHED status and exit (+ TASK_ID fast path)
+5. ✅ Set `execution_mode = "distributed"` in factory.tfvars
+6. ✅ Add `dispatch_monolith_ecs` target for depth < 0.5 tasks
+7. ✅ Add `ecs_failure_handler` with retry (replaces always-on monolith resilience)
+8. 🔲 Monitor for 1 week — confirm zero stuck tasks without dual-path
+9. 🔲 Remove `execution_mode` variable entirely (fully cognitive-driven)
+
+### Rollback
+
+Set `execution_mode = "monolith"` in factory.tfvars and `terraform apply`.
+This re-enables the ALM rule → ECS targets (dual-path) and the `_should_defer_to_orchestrator()`
+check prevents duplicate execution.
+
+### Cost Impact
+
+- Before: 2 ECS tasks per ALM event (monolith cold start + dispatch container) = ~$0.04/task wasted
+- After: 1 ECS task per ALM event (only dispatch container) = $0.00 waste
+- At 50 tasks/day: ~$2/day savings ($60/month)
+
+### Well-Architected Alignment
+
+| Pillar | Question | How Addressed |
+|--------|----------|---------------|
+| COST 7 | Right-size resources | Eliminated wasted monolith cold starts |
+| REL 9 | Fault isolation | Retry handler + DLQ + pull-based fallback = 3 layers |
+| REL 11 | Withstand failures | ecs_failure_handler retries transient infra failures (max 3x) |
+| OPS 8 | Observability | dispatch_monolith CloudWatch log + DLQ alarm retained |

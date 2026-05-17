@@ -100,25 +100,28 @@ resource "aws_iam_role_policy" "eventbridge_ecs_run_task" {
 # ─── Targets: ECS RunTask with event passthrough ─────────────────
 
 locals {
-  # Cognitive Router Architecture (supersedes ADR-021 two-way door):
+  # Cognitive Router Architecture (ADR-030 formalized as single-path):
   #
-  # The webhook_ingest Lambda now computes depth per-task and emits
-  # fde.internal/task.dispatched events. The original ALM rules ALWAYS
-  # start the monolith (strands-agent) as a fallback. The cognitive_router.tf
-  # rules handle distributed dispatch when depth >= 0.5.
+  # In distributed mode (execution_mode=distributed):
+  #   - ALM rules fire ONLY the webhook_ingest Lambda (no direct ECS targets)
+  #   - Lambda computes depth and emits fde.internal/task.dispatched events
+  #   - dispatch_distributed rule starts ECS for depth >= 0.5
+  #   - dispatch_monolith rule starts ECS for depth < 0.5
+  #   - ecs_failure_handler retries transient failures (max 3x)
+  #   - No fan-out, no race conditions, no wasted cold starts
   #
-  # Dual-path guarantee:
-  #   - These targets ALWAYS start strands-agent (monolith)
-  #   - The monolith checks task_queue status on startup:
-  #     - DISPATCHED → Lambda handled routing → exit cleanly
-  #     - READY → Lambda failed → monolith runs as fallback
+  # In monolith mode (execution_mode=monolith, emergency rollback):
+  #   - ALM rules fire BOTH Lambda AND ECS targets (dual-path, original ADR-030)
+  #   - _should_defer_to_orchestrator() prevents duplicate execution
+  #   - Higher cost (2x ECS tasks) but zero-dependency on Lambda
   #
-  # The var.execution_mode is retained for emergency override:
-  #   - "monolith" → cognitive routing disabled, all tasks go to monolith
-  #   - "distributed" → cognitive routing active (Lambda decides per-task)
+  # The var.execution_mode is the emergency kill switch:
+  #   - "distributed" → single-path via Lambda (default in factory.tfvars)
+  #   - "monolith" → dual-path with always-on ECS fallback
   #
   # To fully disable cognitive routing: set COGNITIVE_ROUTING_ENABLED=false
-  # on the Lambda. All tasks will stay READY and monolith handles them.
+  # on the Lambda. All tasks will stay READY and the pull-based fallback
+  # in agent_entrypoint.py will claim them.
   ecs_target_config = {
     task_definition_arn = aws_ecs_task_definition.strands_agent.arn
     container_name      = "strands-agent"
@@ -163,7 +166,13 @@ locals {
   TEMPLATE
 }
 
+# Dual-path fallback target (ADR-030 legacy):
+# Only active when execution_mode = "monolith" (emergency rollback).
+# In distributed mode, the webhook_ingest Lambda handles all routing
+# via fde.internal/task.dispatched events → dispatch rules in cognitive_router.tf.
+# Ref: Single-path formalization — eliminates fan-out cost and race conditions.
 resource "aws_cloudwatch_event_target" "github_ecs" {
+  count          = var.execution_mode == "monolith" ? 1 : 0
   rule           = aws_cloudwatch_event_rule.github_factory_ready.name
   event_bus_name = aws_cloudwatch_event_bus.factory.name
   target_id      = "github-ecs-agent"
@@ -188,6 +197,7 @@ resource "aws_cloudwatch_event_target" "github_ecs" {
 }
 
 resource "aws_cloudwatch_event_target" "gitlab_ecs" {
+  count          = var.execution_mode == "monolith" ? 1 : 0
   rule           = aws_cloudwatch_event_rule.gitlab_factory_ready.name
   event_bus_name = aws_cloudwatch_event_bus.factory.name
   target_id      = "gitlab-ecs-agent"
@@ -212,6 +222,7 @@ resource "aws_cloudwatch_event_target" "gitlab_ecs" {
 }
 
 resource "aws_cloudwatch_event_target" "asana_ecs" {
+  count          = var.execution_mode == "monolith" ? 1 : 0
   rule           = aws_cloudwatch_event_rule.asana_factory_ready.name
   event_bus_name = aws_cloudwatch_event_bus.factory.name
   target_id      = "asana-ecs-agent"
