@@ -557,6 +557,28 @@ def _handle_tasks(event, context):
             current_stage = item.get("current_stage", "")
             stage_index = PIPELINE_STAGES.index(current_stage) if current_stage in PIPELINE_STAGES else -1
 
+            # Normalize stage to human-readable phase label (unified contract)
+            # All views (Pipeline, Reasoning, History, Observability) use this label.
+            _STAGE_TO_PHASE_LABEL = {
+                "ingested": "Ingestion",
+                "warming": "Container Start",
+                "claimed": "Task Intake",
+                "workspace": "Workspace Setup",
+                "reconnaissance": "Reconnaissance",
+                "intake": "Reconnaissance",
+                "task": "Engineering",
+                "swe": "Engineering",
+                "code": "Engineering",
+                "architect": "Engineering",
+                "reviewer": "Engineering",
+                "engineering": "Engineering",
+                "testing": "Engineering",
+                "review": "Review & PR",
+                "reporting": "Review & PR",
+                "completion": "Completion",
+            }
+            phase_label = _STAGE_TO_PHASE_LABEL.get(current_stage, current_stage.replace("_", " ").title() if current_stage else "Pending")
+
             # Determine if task completed without delivery (pr_error present)
             result_json = item.get("result", "")
             has_pr_error = False
@@ -582,6 +604,7 @@ def _handle_tasks(event, context):
                     "total": len(PIPELINE_STAGES),
                     "stages": PIPELINE_STAGES,
                     "percent": int(((stage_index + 1) / len(PIPELINE_STAGES)) * 100) if stage_index >= 0 else 0,
+                    "phase_label": phase_label,
                 },
                 "agent": {
                     "instance_id": agent.get("agent_instance_id", item.get("assigned_agent", "")),
