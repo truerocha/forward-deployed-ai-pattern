@@ -36,6 +36,8 @@ metrics_table = dynamodb.Table(METRICS_TABLE)
 # The progress bar works with both — unknown stages get a fallback calculation.
 PIPELINE_STAGES = [
     "ingested",
+    "warming",       # Container ACK — ECS task alive, booting
+    "claimed",       # Orchestrator claimed the task from DynamoDB
     "workspace",
     "reconnaissance",
     "intake",

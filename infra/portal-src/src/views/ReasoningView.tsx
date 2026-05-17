@@ -34,7 +34,9 @@ interface ReasoningViewProps {
 
 // Pipeline phases in execution order
 const PIPELINE_PHASES = [
-  { id: 'intake', label: 'Task Intake', description: 'Webhook received, task classified and dispatched' },
+  { id: 'ingestion', label: 'Ingestion', description: 'Webhook received, parsed, schema validated, dispatched' },
+  { id: 'warming', label: 'Container Start', description: 'ECS container provisioning and booting' },
+  { id: 'intake', label: 'Task Intake', description: 'Task claimed, routing decision, scope check' },
   { id: 'workspace', label: 'Workspace Setup', description: 'Repository cloned, branch created' },
   { id: 'reconnaissance', label: 'Reconnaissance', description: 'Spec analyzed, constraints extracted' },
   { id: 'engineering', label: 'Engineering', description: 'Code generation, implementation' },
@@ -51,11 +53,23 @@ function deriveStepsFromLogs(logs: LogEntry[]): { steps: any[]; activeIndex: num
 
   for (const log of logs) {
     const msg = log.message.toLowerCase();
+    if (msg.includes('ingestion') || msg.includes('parsed') || msg.includes('schema validation') || msg.includes('dispatch')) {
+      phasesSeen.add('ingestion');
+      currentPhase = 'ingestion';
+    }
+    if (msg.includes('warming') || msg.includes('container ack') || msg.includes('container start') || msg.includes('provisioning')) {
+      phasesSeen.add('warming');
+      currentPhase = 'warming';
+    }
+    if (msg.includes('claimed') || msg.includes('scope') || msg.includes('routing') || msg.includes('autonomy')) {
+      phasesSeen.add('intake');
+      currentPhase = 'intake';
+    }
     if (msg.includes('workspace') || msg.includes('cloned') || msg.includes('branch')) {
       phasesSeen.add('workspace');
       currentPhase = 'workspace';
     }
-    if (msg.includes('reconnaissance') || msg.includes('constraint') || msg.includes('scope')) {
+    if (msg.includes('reconnaissance') || msg.includes('constraint')) {
       phasesSeen.add('reconnaissance');
       currentPhase = 'reconnaissance';
     }
@@ -75,8 +89,8 @@ function deriveStepsFromLogs(logs: LogEntry[]): { steps: any[]; activeIndex: num
       hasError = true;
       errorPhase = currentPhase;
     }
-    // Always mark intake as seen
-    phasesSeen.add('intake');
+    // Always mark ingestion as seen (first event implies ingestion happened)
+    phasesSeen.add('ingestion');
   }
 
   const activePhaseIndex = PIPELINE_PHASES.findIndex(p => p.id === currentPhase);
@@ -157,28 +171,53 @@ const columnDefinitions: TableProps.ColumnDefinition<LogEntry>[] = [
 ];
 
 function buildTreeData(logs: LogEntry[]) {
-  // Group logs by detected phase
+  // Group logs by phase field (deterministic) with keyword fallback
   const phases: Record<string, LogEntry[]> = {};
-  const phaseOrder = ['Intake', 'Workspace', 'Reconnaissance', 'Engineering', 'Review', 'Completion', 'Other'];
+  const phaseOrder = ['Ingestion', 'Intake', 'Workspace', 'Reconnaissance', 'Engineering', 'Review', 'Completion', 'Other'];
 
   for (const phase of phaseOrder) phases[phase] = [];
 
   for (const log of logs) {
-    const msg = log.message.toLowerCase();
-    if (msg.includes('workspace') || msg.includes('clone') || msg.includes('branch')) {
-      phases['Workspace'].push(log);
-    } else if (msg.includes('reconnaissance') || msg.includes('constraint') || msg.includes('scope') || msg.includes('intake')) {
-      phases['Reconnaissance'].push(log);
-    } else if (msg.includes('engineering') || msg.includes('step_') || msg.includes('erp') || msg.includes('executing') || msg.includes('code')) {
-      phases['Engineering'].push(log);
-    } else if (msg.includes('push') || msg.includes('pr ') || msg.includes('pull request') || msg.includes('review')) {
-      phases['Review'].push(log);
-    } else if (msg.includes('complete') || msg.includes('finished') || msg.includes('metrics')) {
-      phases['Completion'].push(log);
-    } else if (msg.includes('starting') || msg.includes('dispatch') || msg.includes('ingest')) {
+    // Primary: use the structured phase field (deterministic, no guessing)
+    const rawPhase = log.phase || '';
+
+    if (rawPhase === 'ingestion') {
+      phases['Ingestion'].push(log);
+    } else if (rawPhase === 'intake') {
       phases['Intake'].push(log);
+    } else if (rawPhase === 'workspace') {
+      phases['Workspace'].push(log);
+    } else if (rawPhase === 'reconnaissance' || rawPhase.includes('code-reader')) {
+      phases['Reconnaissance'].push(log);
+    } else if (rawPhase === 'engineering' || rawPhase.includes('developer') || rawPhase.includes('swe-') || rawPhase.includes('code-quality')) {
+      phases['Engineering'].push(log);
+    } else if (rawPhase === 'review' || rawPhase.includes('commiter') || rawPhase.includes('committer') || rawPhase.includes('fidelity')) {
+      phases['Review'].push(log);
+    } else if (rawPhase === 'completion' || rawPhase.includes('reporting')) {
+      phases['Completion'].push(log);
+    } else if (rawPhase) {
+      // Has a phase but doesn't match known categories — use as-is in Engineering (most common)
+      phases['Engineering'].push(log);
     } else {
-      phases['Other'].push(log);
+      // No phase field — fallback to keyword matching (legacy events)
+      const msg = log.message.toLowerCase();
+      if (msg.includes('ingestion') || msg.includes('parsed') || msg.includes('schema')) {
+        phases['Ingestion'].push(log);
+      } else if (msg.includes('workspace') || msg.includes('clone')) {
+        phases['Workspace'].push(log);
+      } else if (msg.includes('reconnaissance') || msg.includes('constraint') || msg.includes('scope')) {
+        phases['Reconnaissance'].push(log);
+      } else if (msg.includes('engineering') || msg.includes('step_') || msg.includes('executing')) {
+        phases['Engineering'].push(log);
+      } else if (msg.includes('push') || msg.includes('pr ') || msg.includes('pull request')) {
+        phases['Review'].push(log);
+      } else if (msg.includes('complete') || msg.includes('finished') || msg.includes('metrics')) {
+        phases['Completion'].push(log);
+      } else if (msg.includes('starting') || msg.includes('dispatch') || msg.includes('ingest') || msg.includes('claimed')) {
+        phases['Intake'].push(log);
+      } else {
+        phases['Other'].push(log);
+      }
     }
   }
 

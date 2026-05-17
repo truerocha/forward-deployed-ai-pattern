@@ -279,6 +279,69 @@ resource "aws_ecs_service" "a2a" {
   }
 }
 
+# ─── Auto Scaling: A2A Services (Fase 1 — independent scaling) ───────────────
+# Each A2A service scales independently based on CPU utilization.
+# This prevents neighborhood noise from Strands burst affecting A2A latency.
+# Threshold: CPU > 70% → scale out. CPU < 30% → scale in.
+# Min=1 (always available), Max=3 (cost cap for dev).
+# Well-Architected: PERF 1 (Right-size), COST 7 (Right-size resources)
+
+resource "aws_appautoscaling_target" "a2a" {
+  for_each = toset(["pesquisa", "escrita", "revisao"])
+
+  max_capacity       = var.environment == "prod" ? 5 : 3
+  min_capacity       = 1
+  resource_id        = "service/${aws_ecs_cluster.factory.name}/${aws_ecs_service.a2a[each.key].name}"
+  scalable_dimension = "ecs:service:DesiredCount"
+  service_namespace  = "ecs"
+}
+
+resource "aws_appautoscaling_policy" "a2a_cpu" {
+  for_each = toset(["pesquisa", "escrita", "revisao"])
+
+  name               = "${local.name_prefix}-a2a-${each.key}-cpu-scaling"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.a2a[each.key].resource_id
+  scalable_dimension = aws_appautoscaling_target.a2a[each.key].scalable_dimension
+  service_namespace  = aws_appautoscaling_target.a2a[each.key].service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ECSServiceAverageCPUUtilization"
+    }
+    target_value       = 70.0
+    scale_in_cooldown  = 300
+    scale_out_cooldown = 60
+  }
+}
+
+# ─── CloudWatch Alarm: A2A Latency (Fase 2 trigger) ─────────────────────────
+# If A2A p99 response time exceeds 3s, it indicates neighborhood noise.
+# This alarm is the decision gate for Fase 2 (cluster separation).
+# Well-Architected: OPS 8 (Anticipate failure), PERF 4 (Monitor resources)
+
+resource "aws_cloudwatch_metric_alarm" "a2a_latency_gate" {
+  alarm_name          = "${local.name_prefix}-a2a-latency-fase2-gate"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 3
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/ECS"
+  period              = 300
+  statistic           = "Average"
+  threshold           = 85
+  alarm_description   = "A2A CPU > 85% sustained — evaluate Fase 2 (cluster separation) for latency isolation"
+
+  dimensions = {
+    ClusterName = aws_ecs_cluster.factory.name
+    ServiceName = "${local.name_prefix}-a2a-pesquisa"
+  }
+
+  tags = {
+    Component = "a2a-protocol"
+    Purpose   = "fase2-decision-gate"
+  }
+}
+
 # ─── Outputs ─────────────────────────────────────────────────────────────────
 
 output "a2a_namespace_id" {

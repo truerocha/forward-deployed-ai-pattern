@@ -113,6 +113,27 @@ def handler(event, context):
     # Write to task_queue table (idempotent — skip if issue_id already exists)
     table = dynamodb.Table(TASK_QUEUE_TABLE)
 
+    # ── Ingestion Event ①: Parse result ──────────────────────────
+    # Emit BEFORE dedup check so the dashboard shows "we received this"
+    # even if it's a duplicate. Visible in Pipeline + Reasoning tabs.
+    _ingestion_events = []
+    _parse_fields = {
+        "title": bool(task.get("title")),
+        "spec_content": bool(task.get("spec_content")),
+        "repo": bool(task.get("repo")),
+        "issue_id": bool(task.get("issue_id")),
+        "priority": task.get("priority", "P2"),
+    }
+    _parse_confidence = sum(1 for v in _parse_fields.values() if v) / len(_parse_fields)
+    _ingestion_events.append({
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "type": "system",
+        "msg": f"Ingestion: parsed issue (confidence={_parse_confidence:.0%}, "
+               f"fields={sum(1 for v in _parse_fields.values() if v)}/{len(_parse_fields)})",
+        "phase": "ingestion",
+        "context": json.dumps({k: ("✓" if v else "✗") for k, v in _parse_fields.items()}),
+    })
+
     # Deduplicate: check if a task for this issue already exists
     existing = _find_existing_task(table, task.get("issue_id", ""))
     if existing:
@@ -122,6 +143,58 @@ def handler(event, context):
             "statusCode": 200,
             "body": json.dumps({"task_id": existing["task_id"], "status": "duplicate_skipped"}),
         }
+
+    # ── Ingestion Gate: Schema Validation ────────────────────────
+    # Validates that the parsed data contract has minimum required fields.
+    # If critical fields are missing, the task is written with status=REJECTED
+    # so the dashboard shows WHY (instead of silent downstream failure).
+    _schema_errors = []
+    if not task.get("title"):
+        _schema_errors.append("title is empty")
+    if not task.get("spec_content"):
+        _schema_errors.append("spec_content is empty (no issue body)")
+    if not task.get("repo"):
+        _schema_errors.append("repo not extracted")
+    if not task.get("issue_id"):
+        _schema_errors.append("issue_id not extracted")
+    if _parse_confidence < 0.4:
+        _schema_errors.append(f"parse_confidence too low ({_parse_confidence:.0%})")
+
+    if _schema_errors:
+        logger.warning("Schema validation FAILED for task %s: %s", task.get("task_id", "?"), _schema_errors)
+        _ingestion_events.append({
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "type": "gate",
+            "msg": f"Schema validation FAILED: {'; '.join(_schema_errors)}",
+            "phase": "ingestion",
+            "gate_name": "schema_validation",
+            "gate_result": "fail",
+            "context": f"Missing/invalid fields prevent reliable execution. "
+                       f"Fix the issue template and re-label.",
+        })
+        task["events"] = _ingestion_events
+        task["status"] = "REJECTED"
+        task["error"] = f"schema_validation_failed: {'; '.join(_schema_errors)}"
+        task["current_stage"] = "rejected"
+        table.put_item(Item=task)
+        return {
+            "statusCode": 200,
+            "body": json.dumps({
+                "task_id": task.get("task_id", ""),
+                "status": "rejected",
+                "errors": _schema_errors,
+            }),
+        }
+
+    # Schema validation passed — add event
+    _ingestion_events.append({
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "type": "gate",
+        "msg": f"Schema validation passed (confidence={_parse_confidence:.0%})",
+        "phase": "ingestion",
+        "gate_name": "schema_validation",
+        "gate_result": "pass",
+    })
 
     # ─── Cognitive Routing: compute depth and decide target mode ──
     if COGNITIVE_ROUTING_ENABLED:
@@ -145,8 +218,37 @@ def handler(event, context):
     task["complexity"] = complexity_result["complexity"]
     task["complexity_indicators"] = json.dumps(complexity_result["matched_indicators"])
 
-    # Write task to DynamoDB
+    # ── Ingestion Event ②: Routing decision ──────────────────────
+    _ingestion_events.append({
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "type": "system",
+        "msg": f"Routing: target={target_mode}, depth={task.get('depth', '0.0')}, "
+               f"complexity={complexity_result['complexity']}",
+        "phase": "ingestion",
+        "context": f"Indicators: {complexity_result['matched_indicators'][:5]}. "
+                   f"Status: {task.get('status', 'READY')}",
+    })
+
+    # Write task to DynamoDB (include ingestion events for immediate dashboard visibility)
+    task["events"] = _ingestion_events
     table.put_item(Item=task)
+
+    # ── Ingestion Event ③: DynamoDB write confirmed ──────────────
+    # (This event is appended AFTER the write succeeds — confirms persistence)
+    _post_write_event = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "type": "system",
+        "msg": f"Ingestion: task persisted to DynamoDB (task_id={task['task_id']})",
+        "phase": "ingestion",
+    }
+    try:
+        table.update_item(
+            Key={"task_id": task["task_id"]},
+            UpdateExpression="SET events = list_append(events, :evt)",
+            ExpressionAttributeValues={":evt": [_post_write_event]},
+        )
+    except Exception:
+        pass  # Non-blocking
 
     # Create a provisional agent lifecycle record (CREATED state)
     _create_agent_record(task)
@@ -197,6 +299,26 @@ def handler(event, context):
                                task["task_id"], block_reason)
         else:
             _emit_dispatch_event(task, depth_result, target_mode)
+
+    # ── Ingestion Event ④: Dispatch result ───────────────────────
+    _dispatch_status = task.get("status", "READY")
+    _dispatch_event = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "type": "system",
+        "msg": f"Dispatch: status={_dispatch_status}, target={target_mode}, "
+               f"event_emitted={'yes' if _dispatch_status == 'DISPATCHED' else 'no'}",
+        "phase": "ingestion",
+        "gate_name": "dispatch",
+        "gate_result": "pass" if _dispatch_status in ("DISPATCHED", "READY") else "fail",
+    }
+    try:
+        table.update_item(
+            Key={"task_id": task["task_id"]},
+            UpdateExpression="SET events = list_append(events, :evt)",
+            ExpressionAttributeValues={":evt": [_dispatch_event]},
+        )
+    except Exception:
+        pass  # Non-blocking
 
     elapsed_ms = int((time.time() - start_time) * 1000)
     logger.info(

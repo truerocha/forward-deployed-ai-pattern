@@ -174,22 +174,79 @@ class Orchestrator:
             existing_task = task_queue.find_task_by_issue(issue_id)
             if existing_task:
                 existing_status = existing_task.get("status", "")
-                # If task is already IN_PROGRESS, another container is executing it.
-                # Exit gracefully to prevent duplicate execution (idempotency guard).
-                if existing_status == "IN_PROGRESS":
+                # ── Idempotency Linter (not blocker) ─────────────────────
+                # The same issue can be re-submitted for valid reasons:
+                #   - Rework (PR rejected → new attempt with constraint)
+                #   - Context fix (PM edited issue body)
+                #   - Data contract correction (spec refined after failure)
+                #   - Retry after failure
+                # Also: A2A protocol allows multiple agents on the same task_id.
+                #
+                # Strategy: INFORM + CORRELATE, don't BLOCK.
+                #   - If IN_PROGRESS by SAME issue: log correlation, proceed
+                #     (the orchestrator's concurrency guard handles actual conflicts)
+                #   - If COMPLETED/FAILED: this is a re-submission → new execution
+                #   - Only truly block if SAME task_id (not same issue_id)
+                canonical_id = existing_task["task_id"]
+
+                if existing_status == "IN_PROGRESS" and canonical_id == task_id:
+                    # Same task_id already running (exact duplicate, not re-submission)
                     logger.info(
                         "Task %s for issue %s is already IN_PROGRESS — "
-                        "exiting to prevent duplicate execution (idempotency guard)",
-                        existing_task["task_id"], issue_id,
+                        "idempotency guard: same task_id, skipping duplicate execution",
+                        canonical_id, issue_id,
+                    )
+                    task_queue.append_task_event(
+                        task_id, "gate",
+                        f"Idempotency: exact task_id {canonical_id} already IN_PROGRESS — skipped",
+                        phase="intake", gate_name="idempotency", gate_result="skip",
+                        context=f"Same task_id re-entered the pipeline. This is a duplicate "
+                                f"container start, not a re-submission. Safe to skip.",
                     )
                     return {
                         "status": "duplicate_skipped",
-                        "task_id": existing_task["task_id"],
+                        "task_id": canonical_id,
                         "reason": "Task already in progress by another container",
                     }
-                task_id = existing_task["task_id"]
-                task_queue.claim_task(task_id, "fde-orchestrator")
-                logger.info("Claimed existing task %s (issue: %s)", task_id, issue_id)
+                elif existing_status == "IN_PROGRESS" and canonical_id != task_id:
+                    # Different task_id for same issue — re-submission or A2A multi-agent
+                    # INFORM but don't block. The concurrency guard (Step 3.2) handles conflicts.
+                    logger.info(
+                        "Issue %s has active task %s (IN_PROGRESS) — "
+                        "this is task %s (re-submission or A2A). Proceeding with correlation.",
+                        issue_id, canonical_id, task_id,
+                    )
+                    task_queue.append_task_event(
+                        task_id, "system",
+                        f"Correlated: issue also tracked by {canonical_id} (IN_PROGRESS). "
+                        f"Proceeding — concurrency guard will manage conflicts.",
+                        phase="intake",
+                        context=f"Related task: {canonical_id}. Reasons for re-submission: "
+                                f"rework, context fix, data contract correction, or A2A multi-agent.",
+                    )
+                    # Use the existing task_id for correlation but DON'T block
+                    task_id = existing_task["task_id"]
+                    task_queue.claim_task(task_id, "fde-orchestrator")
+                    logger.info("Claimed existing task %s (issue: %s) — re-entry", task_id, issue_id)
+                    # ── Status: CLAIMED — visible in dashboard progress bar ──
+                    task_queue.update_task_stage(task_id, "claimed")
+                    task_queue.append_task_event(
+                        task_id, "system",
+                        f"Task re-claimed by orchestrator (re-submission of issue {issue_id})",
+                        phase="intake",
+                    )
+                else:
+                    # DISPATCHED, READY, COMPLETED, FAILED — claim and proceed normally
+                    task_id = existing_task["task_id"]
+                    task_queue.claim_task(task_id, "fde-orchestrator")
+                    logger.info("Claimed existing task %s (issue: %s)", task_id, issue_id)
+                    # ── Status: CLAIMED — visible in dashboard progress bar ──
+                    task_queue.update_task_stage(task_id, "claimed")
+                    task_queue.append_task_event(
+                        task_id, "system",
+                        f"Task claimed by orchestrator (correlated with webhook_ingest record)",
+                        phase="intake",
+                    )
             else:
                 logger.info("No existing task for issue %s — using generated ID %s", issue_id, task_id)
 
@@ -202,6 +259,30 @@ class Orchestrator:
             autonomy_level=str(autonomy_result.level),
             confidence=scope_result.confidence_level,
             context=f"Scope check passed. Gates resolved: outer={gates.outer_gates}, inner={gates.inner_gates}",
+        )
+
+        # ── Step 3.1a: Router Observability (post-hoc) ──────────
+        # The router runs BEFORE task_id is resolved (Step 1 vs Step 3.1).
+        # We emit its decision metadata here, after task_id is available,
+        # so the dashboard shows the full routing context for this task.
+        _ac_count = len(data_contract.get("acceptance_criteria", []))
+        _tech_stack = data_contract.get("tech_stack", [])
+        _source = data_contract.get("source", "unknown")
+        task_queue.append_task_event(
+            task_id, "system",
+            f"Router decision: agent={decision.agent_name}, source={_source}, "
+            f"acceptance_criteria={_ac_count}, tech_stack={_tech_stack}",
+            phase="intake",
+            context=f"Data contract: type={data_contract.get('type', 'unknown')}, "
+                    f"constraints={len(data_contract.get('constraints', []))}, "
+                    f"related_docs={len(data_contract.get('related_docs', []))}",
+        )
+        task_queue.append_task_event(
+            task_id, "system",
+            f"Scope check: in_scope=True, confidence={scope_result.confidence_level}",
+            phase="intake",
+            context=f"Autonomy: level={autonomy_result.level}, depth={getattr(autonomy_result, 'depth', 'N/A')}, "
+                    f"squad_size={getattr(autonomy_result, 'squad_size', 'N/A')}",
         )
 
         # ── Step 3.2: Concurrency Guard ─────────────────────────
@@ -362,6 +443,31 @@ class Orchestrator:
         if workspace.ready:
             logger.info("Workspace ready: %s (branch: %s)", workspace.repo_path, workspace.branch_name)
             task_queue.append_task_event(task_id, "system", f"Workspace ready: {workspace.repo_full_name} → {workspace.branch_name}", phase="workspace")
+            # ── EFS Workspace Health: report clone completeness ──────────
+            # Gives operators visibility into whether the clone is complete.
+            # A partial clone (network timeout) degrades agent output silently.
+            try:
+                import subprocess
+                _wc_result = subprocess.run(
+                    ["find", workspace.repo_path, "-type", "f", "-not", "-path", "*/.git/*"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                _file_count = len(_wc_result.stdout.strip().split("\n")) if _wc_result.stdout.strip() else 0
+                _du_result = subprocess.run(
+                    ["du", "-sh", workspace.repo_path],
+                    capture_output=True, text=True, timeout=5,
+                )
+                _workspace_size = _du_result.stdout.split()[0] if _du_result.stdout else "?"
+                task_queue.append_task_event(
+                    task_id, "gate",
+                    f"Workspace health: {_file_count} files, {_workspace_size}",
+                    phase="workspace",
+                    gate_name="workspace_health", gate_result="pass" if _file_count > 10 else "warn",
+                    context=f"Path: {workspace.repo_path}. "
+                            f"{'Clone appears complete.' if _file_count > 10 else 'WARNING: Very few files — possible partial clone.'}",
+                )
+            except Exception:
+                pass  # Non-blocking — don't fail pipeline for health check
             # Inject workspace context into the agent's prompt so it knows
             # it's in a cloned repo and doesn't re-initialize git
             workspace_context = (
@@ -388,45 +494,108 @@ class Orchestrator:
             task_queue.append_task_event(task_id, "error", f"Workspace failed: {workspace.error[:150]}", phase="workspace")
 
         # ── Step 7.6: Code Intelligence Auto-Activation (ADR-035) ────
-        # If no catalog exists for this repo, run lightweight onboarding
-        # to generate call graph + semantic index. This gives agents
-        # impact analysis and semantic search for the session.
-        # Trigger: catalog_confidence == 0.0 AND organism_level >= O2
-        # Cost: ~30s for typical repo (Tree-sitter parse + SQLite write)
-        # Security: Zero egress — all processing local to container.
+        # Self-healing cascade for Knowledge Graph availability:
+        #   1. S3 cached catalog (from previous execution) → ~2s download
+        #   2. Local Tree-sitter indexing (full scan) → ~30s
+        #   3. Lightweight file-list fallback (no call graph) → ~5s
+        #   4. WARN (agents operate without KG) → last resort
+        #
+        # The pipeline MUST NOT depend on operator intervention for KG.
+        # Each fallback level provides progressively less capability but
+        # ensures agents always have SOME context awareness.
         if workspace.ready:
-            catalog_confidence = self._check_catalog_confidence(repo)
-            organism = data_contract.get("organism_level", "O3")
-            should_index = (
-                catalog_confidence == 0.0
-                and organism not in ("O1",)
-                and not os.environ.get("SKIP_CODE_INTELLIGENCE")
-            )
-            if should_index:
+            catalog_path = None
+            _kg_resolution = "none"
+
+            # ── Cascade Level 1: S3 cached catalog ───────────────────────
+            # Check S3 first (fastest path — catalog from previous onboarding)
+            existing_catalog = self._find_existing_catalog(repo)
+            if existing_catalog:
+                catalog_path = existing_catalog
+                _kg_resolution = "s3_cache"
+                os.environ["CATALOG_PATH"] = catalog_path
                 task_queue.append_task_event(
-                    task_id, "system",
-                    "Code intelligence: no catalog found — indexing repo for impact analysis...",
+                    task_id, "gate",
+                    f"Knowledge Graph available (S3 cached catalog)",
                     phase="workspace",
+                    gate_name="knowledge_graph", gate_result="pass",
+                    context=f"Catalog: {catalog_path}. Source: S3 cache from previous execution.",
                 )
-                catalog_path = self._run_code_intelligence_indexing(workspace.repo_path, repo)
-                if catalog_path:
-                    os.environ["CATALOG_PATH"] = catalog_path
+            else:
+                # ── Cascade Level 2: Local Tree-sitter indexing ───────────
+                organism = data_contract.get("organism_level", "O3")
+                should_index = (
+                    organism not in ("O1",)
+                    and not os.environ.get("SKIP_CODE_INTELLIGENCE")
+                )
+                if should_index:
                     task_queue.append_task_event(
                         task_id, "system",
-                        f"Code intelligence ready ({catalog_path})",
+                        "Code intelligence: no S3 catalog — attempting local indexing...",
                         phase="workspace",
                     )
+                    catalog_path = self._run_code_intelligence_indexing(workspace.repo_path, repo)
+                    if catalog_path:
+                        _kg_resolution = "local_index"
+                        os.environ["CATALOG_PATH"] = catalog_path
+                        task_queue.append_task_event(
+                            task_id, "gate",
+                            f"Knowledge Graph available (freshly indexed)",
+                            phase="workspace",
+                            gate_name="knowledge_graph", gate_result="pass",
+                            context=f"Catalog: {catalog_path}. Source: local Tree-sitter scan.",
+                        )
+                    else:
+                        # ── Cascade Level 3: Lightweight file-list fallback ──
+                        # Generate a minimal catalog with file paths + basic symbols.
+                        # Agents get semantic search but no call graph.
+                        try:
+                            import subprocess
+                            _file_list_result = subprocess.run(
+                                ["find", workspace.repo_path, "-type", "f",
+                                 "-name", "*.py", "-o", "-name", "*.ts",
+                                 "-o", "-name", "*.js", "-o", "-name", "*.tf"],
+                                capture_output=True, text=True, timeout=10,
+                            )
+                            _files = [f for f in _file_list_result.stdout.strip().split("\n") if f]
+                            if _files:
+                                # Write a minimal catalog as env var (agents can use for file discovery)
+                                os.environ["CATALOG_FILE_LIST"] = "\n".join(_files[:500])
+                                os.environ["CATALOG_FILE_COUNT"] = str(len(_files))
+                                _kg_resolution = "file_list_fallback"
+                                task_queue.append_task_event(
+                                    task_id, "gate",
+                                    f"Knowledge Graph: lightweight fallback ({len(_files)} files indexed)",
+                                    phase="workspace",
+                                    gate_name="knowledge_graph", gate_result="pass",
+                                    context=f"Full indexing failed. Fallback: file-list only ({len(_files)} files). "
+                                            f"Agents have file discovery but no call graph or impact analysis.",
+                                )
+                            else:
+                                raise ValueError("No source files found")
+                        except Exception as _fallback_err:
+                            # ── Cascade Level 4: WARN (last resort) ──────────
+                            _kg_resolution = "unavailable"
+                            task_queue.append_task_event(
+                                task_id, "gate",
+                                "Knowledge Graph UNAVAILABLE — all fallbacks exhausted",
+                                phase="workspace",
+                                gate_name="knowledge_graph", gate_result="warn",
+                                context=f"Cascade failed: S3=miss, local_index=failed, file_list={str(_fallback_err)[:100]}. "
+                                        f"Agents operate without blast radius awareness.",
+                            )
                 else:
+                    # O1 organism or SKIP_CODE_INTELLIGENCE — intentionally skipped
+                    _kg_resolution = "skipped"
                     task_queue.append_task_event(
-                        task_id, "system",
-                        "Code intelligence indexing skipped (non-blocking)",
+                        task_id, "gate",
+                        "Knowledge Graph skipped (organism=O1 or disabled)",
                         phase="workspace",
+                        gate_name="knowledge_graph", gate_result="pass",
+                        context="Task complexity too low for KG — agents don't need impact analysis for simple tasks.",
                     )
-            elif catalog_confidence > 0.0:
-                # Catalog exists — set path for agents to use
-                existing_catalog = self._find_existing_catalog(repo)
-                if existing_catalog:
-                    os.environ["CATALOG_PATH"] = existing_catalog
+
+            logger.info("KG resolution: %s (catalog=%s)", _kg_resolution, catalog_path or "none")
 
         # ── Step 7.7: ERP Check (Execution Readiness Pipeline, Wave 1) ──
         # If the task was classified as "execution" by the webhook_ingest Lambda,
@@ -872,6 +1041,19 @@ class Orchestrator:
 
                     # Write output to SCD
                     scd.write_from_agent(agent_role, message)
+
+                    # ── SCD Handoff Gate: confirm context was written ────────
+                    # If this write fails silently, the next stage operates without
+                    # context from this agent — leading to quality degradation.
+                    _scd_written = scd.read_for_agent(agent_role) is not None
+                    task_queue.append_task_event(
+                        task_id, "gate",
+                        f"SCD handoff: {agent_role} → {'written' if _scd_written else 'EMPTY'}",
+                        phase=agent_role,
+                        gate_name="scd_handoff", gate_result="pass" if _scd_written else "warn",
+                        context=f"Output: {len(message)} chars. "
+                                f"{'Next stage will read this context.' if _scd_written else 'WARNING: SCD section empty after write — next stage has no context from this agent.'}",
+                    )
 
                     # Write result to S3
                     self._write_result(agent_name, decision.metadata, message)

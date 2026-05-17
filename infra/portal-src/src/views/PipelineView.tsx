@@ -35,7 +35,12 @@ function getTaskStatus(task: any): { type: 'success' | 'error' | 'warning' | 'in
   if (task.status === 'completed' || task.status === 'COMPLETED') return { type: 'success', text: 'Complete' };
   if (task.status === 'completed_no_delivery') return { type: 'warning', text: 'Delivery Failed' };
   if (task.status === 'failed' || task.status === 'FAILED') return { type: 'error', text: task.error ? 'Failed' : 'Failed' };
+  if (task.status === 'REJECTED') return { type: 'error', text: `Rejected: ${task.error?.replace('schema_validation_failed: ', '') || 'invalid'}` };
+  if (task.status === 'DUPLICATE') return { type: 'stopped', text: `Duplicate → ${task.canonical_task_id?.slice(-8) || '?'}` };
   if (task.pr_error) return { type: 'warning', text: 'Push Failed' };
+  // Warming = container is booting (ECS cold start)
+  if (task.current_stage === 'warming') return { type: 'pending', text: '⏳ Container starting...' };
+  if (task.current_stage === 'claimed') return { type: 'in-progress', text: '🤖 Agent claimed' };
   // DISPATCHED without started_at = waiting for container cold start
   if (task.status === 'DISPATCHED' && !task.started_at) return { type: 'pending', text: '⏳ Awaiting container start' };
   if (task.status === 'DISPATCHED') return { type: 'in-progress', text: 'Dispatched' };

@@ -242,6 +242,27 @@ def main():
     # Initialize OTEL distributed tracing (no-op if not configured)
     _init_telemetry()
 
+    # ─── Container ACK: Immediate heartbeat so dashboard shows "warming" ────
+    # Emitted BEFORE any logic runs. Tells the operator the container is alive
+    # and resolves the "ingested 0% for minutes" UX gap (ECS warmup is ~30-60s).
+    _ack_task_id = os.environ.get("TASK_ID", "") or os.environ.get("EVENT_TASK_ID", "")
+    _ack_table = os.environ.get("TASK_QUEUE_TABLE", "")
+    if _ack_task_id and _ack_table:
+        try:
+            from datetime import datetime, timezone
+            _ddb_ack = boto3.resource("dynamodb", region_name=AWS_REGION)
+            _ddb_ack.Table(_ack_table).update_item(
+                Key={"task_id": _ack_task_id},
+                UpdateExpression="SET current_stage = :s, container_ack_at = :t, updated_at = :t",
+                ExpressionAttributeValues={
+                    ":s": "warming",
+                    ":t": datetime.now(timezone.utc).isoformat(),
+                },
+            )
+            logger.info("Container ACK: task %s → stage=warming", _ack_task_id)
+        except Exception as _ack_err:
+            logger.debug("Container ACK failed (non-blocking): %s", str(_ack_err)[:100])
+
     # ─── Dual-Path Check (ADR-030): Defer to orchestrator if Lambda handled routing ──
     # The cognitive router Lambda (webhook_ingest) sets task status to DISPATCHED
     # when it successfully routes a task. If we see DISPATCHED, the orchestrator
@@ -582,7 +603,161 @@ def main():
 
             sys.exit(1)
     else:
-        logger.info("No task. Set TASK_SPEC, EVENTBRIDGE_EVENT, or EVENT_SOURCE+EVENT_ACTION.")
+        # ─── Pull-Based Fallback (COE-020): Claim next DISPATCHED task ──────
+        # If no push-based trigger provided the task, check DynamoDB for tasks
+        # stuck in DISPATCHED state. This closes the open loop when:
+        #   - EventBridge rule didn't fire (label timing, rule misconfiguration)
+        #   - dag_fanout Lambda stream trigger is disconnected
+        #   - webhook_ingest emitted event but no target matched
+        # The container is already running (ECS always-on or scheduled), so
+        # claiming a pending task is zero-cost and prevents stuck tasks.
+        _task_queue_table = os.environ.get("TASK_QUEUE_TABLE", "")
+        _claimed_task = None
+        if _task_queue_table:
+            try:
+                from datetime import datetime, timezone, timedelta
+                _ddb_pull = boto3.resource("dynamodb", region_name=AWS_REGION)
+                _table_pull = _ddb_pull.Table(_task_queue_table)
+
+                # Query for DISPATCHED tasks older than 2 minutes (avoid racing with push path)
+                _stale_cutoff = (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()
+                _resp = _table_pull.query(
+                    IndexName="status-created-index",
+                    KeyConditionExpression="#s = :status AND created_at < :cutoff",
+                    ExpressionAttributeNames={"#s": "status"},
+                    ExpressionAttributeValues={
+                        ":status": "DISPATCHED",
+                        ":cutoff": _stale_cutoff,
+                    },
+                    Limit=1,
+                    ScanIndexForward=True,  # oldest first (FIFO)
+                )
+                _candidates = _resp.get("Items", [])
+
+                if _candidates:
+                    _candidate = _candidates[0]
+                    _task_id = _candidate["task_id"]
+                    _target_mode = _candidate.get("target_mode", "monolith")
+
+                    # Only claim if target_mode matches our capability
+                    # monolith container claims monolith tasks; distributed tasks need dag_fanout
+                    if _target_mode == "monolith":
+                        # Atomic claim: conditional update prevents race with other containers
+                        try:
+                            _table_pull.update_item(
+                                Key={"task_id": _task_id},
+                                UpdateExpression="SET #s = :new_status, started_at = :t, updated_at = :t",
+                                ConditionExpression="#s = :expected_status",
+                                ExpressionAttributeNames={"#s": "status"},
+                                ExpressionAttributeValues={
+                                    ":new_status": "IN_PROGRESS",
+                                    ":expected_status": "DISPATCHED",
+                                    ":t": datetime.now(timezone.utc).isoformat(),
+                                },
+                            )
+                            _claimed_task = _candidate
+                            logger.info(
+                                "Pull fallback: claimed DISPATCHED task %s (issue=%s, age>2min)",
+                                _task_id, _candidate.get("issue_id", "?"),
+                            )
+                        except _ddb_pull.meta.client.exceptions.ConditionalCheckFailedException:
+                            logger.info("Pull fallback: task %s already claimed by another container", _task_id)
+                    else:
+                        logger.debug("Pull fallback: skipping task %s (target_mode=%s, not monolith)", _task_id, _target_mode)
+
+            except Exception as e:
+                logger.debug("Pull fallback check failed (non-blocking): %s", str(e)[:200])
+
+        if _claimed_task:
+            # Reconstruct event from the claimed task record (same logic as TASK_ID mode)
+            _task_id = _claimed_task["task_id"]
+            _repo = _claimed_task.get("repo", "")
+            _issue_number = 0
+            _issue_id = _claimed_task.get("issue_id", "")
+            if "#" in _issue_id:
+                try:
+                    _issue_number = int(_issue_id.split("#")[-1])
+                except (ValueError, IndexError):
+                    pass
+            _title = _claimed_task.get("title", "")
+            _source = _claimed_task.get("source", "github")
+
+            _SOURCE_NORMALIZATION = {
+                "github": "fde.github.webhook",
+                "gitlab": "fde.gitlab.webhook",
+                "asana": "fde.asana.webhook",
+                "direct": "fde.direct",
+            }
+            _source = _SOURCE_NORMALIZATION.get(_source, _source)
+
+            reconstructed_event = {
+                "source": _source,
+                "detail-type": "issue.labeled",
+                "detail": {
+                    "action": "labeled",
+                    "label": {"name": "factory-ready"},
+                    "issue": {
+                        "number": _issue_number,
+                        "title": _title,
+                        "body": _claimed_task.get("spec_content", ""),
+                        "labels": [{"name": "factory-ready"}],
+                    },
+                    "repository": {
+                        "full_name": _repo,
+                    },
+                },
+            }
+            logger.info(
+                "Pull fallback: executing task %s (repo=%s issue=#%s)",
+                _task_id, _repo, _issue_number,
+            )
+
+            # Set TASK_ID env var so orchestrator can correlate with DynamoDB record
+            os.environ["TASK_ID"] = _task_id
+            os.environ["EVENT_TASK_ID"] = _task_id
+
+            try:
+                result = orchestrator.handle_event(reconstructed_event)
+                logger.info("Pull fallback result: %s", json.dumps(result, default=str))
+
+                _table_pull.update_item(
+                    Key={"task_id": _task_id},
+                    UpdateExpression="SET current_stage = :stage, updated_at = :t",
+                    ExpressionAttributeValues={
+                        ":stage": "completion",
+                        ":t": datetime.now(timezone.utc).isoformat(),
+                    },
+                )
+            except Exception as _exec_err:
+                _err_msg = f"{type(_exec_err).__name__}: {str(_exec_err)[:400]}"
+                logger.error("Pull fallback: task %s FAILED: %s", _task_id, _err_msg)
+                try:
+                    _table_pull.update_item(
+                        Key={"task_id": _task_id},
+                        UpdateExpression=(
+                            "SET #s = :s, current_stage = :stage, "
+                            "#err = :err, updated_at = :t, "
+                            "events = list_append(if_not_exists(events, :empty), :evt)"
+                        ),
+                        ExpressionAttributeNames={"#s": "status", "#err": "error"},
+                        ExpressionAttributeValues={
+                            ":s": "FAILED",
+                            ":stage": "execution_error",
+                            ":err": _err_msg,
+                            ":t": datetime.now(timezone.utc).isoformat(),
+                            ":empty": [],
+                            ":evt": [{
+                                "type": "error",
+                                "msg": f"Pull fallback execution failed: {_err_msg[:200]}",
+                                "ts": datetime.now(timezone.utc).isoformat(),
+                            }],
+                        },
+                    )
+                except Exception as _ddb_err:
+                    logger.error("CRITICAL: Failed to update DynamoDB after pull fallback error: %s", str(_ddb_err)[:200])
+                sys.exit(1)
+        else:
+            logger.info("No task. Set TASK_SPEC, EVENTBRIDGE_EVENT, or EVENT_SOURCE+EVENT_ACTION.")
 
     # ─── Metrics Emission (ADR-029): Write lifecycle metrics to DynamoDB ────
     # The entrypoint owns metrics emission — customer orchestrator doesn't need to.

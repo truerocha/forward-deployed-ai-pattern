@@ -122,6 +122,9 @@ export default function App() {
                         ev.type === 'error' ? 'error' :
                         ev.type === 'agent' ? 'working' :
                         ev.type === 'tool' ? 'thought' : 'system',
+                  phase: ev.phase || undefined,
+                  gateName: ev.gate_name || undefined,
+                  gateResult: ev.gate_result || undefined,
                   _sortKey: ev.ts || '',
                 });
               }

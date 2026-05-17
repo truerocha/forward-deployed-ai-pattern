@@ -112,6 +112,83 @@ resource "aws_efs_access_point" "workspaces" {
   }
 }
 
+# ─── EFS Access Points: Domain Isolation (Fase 3) ───────────────
+# Three isolated paths for Strands, A2A, and shared handoff channel.
+# Each domain mounts only its own path + shared. Zero cross-contamination.
+# Well-Architected: SEC 3 (Least privilege), REL 10 (Fault isolation)
+
+resource "aws_efs_access_point" "strands" {
+  file_system_id = aws_efs_file_system.workspaces.id
+
+  posix_user {
+    uid = 1000
+    gid = 1000
+  }
+
+  root_directory {
+    path = "/workspaces/strands"
+    creation_info {
+      owner_uid   = 1000
+      owner_gid   = 1000
+      permissions = "0755"
+    }
+  }
+
+  tags = {
+    Name      = "${var.name_prefix}-strands-ap"
+    Component = "efs"
+    Domain    = "strands"
+  }
+}
+
+resource "aws_efs_access_point" "a2a" {
+  file_system_id = aws_efs_file_system.workspaces.id
+
+  posix_user {
+    uid = 1000
+    gid = 1000
+  }
+
+  root_directory {
+    path = "/workspaces/a2a"
+    creation_info {
+      owner_uid   = 1000
+      owner_gid   = 1000
+      permissions = "0755"
+    }
+  }
+
+  tags = {
+    Name      = "${var.name_prefix}-a2a-ap"
+    Component = "efs"
+    Domain    = "a2a"
+  }
+}
+
+resource "aws_efs_access_point" "shared" {
+  file_system_id = aws_efs_file_system.workspaces.id
+
+  posix_user {
+    uid = 1000
+    gid = 1000
+  }
+
+  root_directory {
+    path = "/workspaces/shared"
+    creation_info {
+      owner_uid   = 1000
+      owner_gid   = 1000
+      permissions = "0755"
+    }
+  }
+
+  tags = {
+    Name      = "${var.name_prefix}-shared-ap"
+    Component = "efs"
+    Domain    = "shared"
+  }
+}
+
 # ─── EFS Backup Policy ──────────────────────────────────────────
 resource "aws_efs_backup_policy" "workspaces" {
   file_system_id = aws_efs_file_system.workspaces.id
@@ -133,13 +210,28 @@ output "file_system_arn" {
 }
 
 output "access_point_id" {
-  description = "EFS access point ID for /workspaces"
+  description = "EFS access point ID for /workspaces (legacy — all domains)"
   value       = aws_efs_access_point.workspaces.id
 }
 
 output "access_point_arn" {
   description = "EFS access point ARN"
   value       = aws_efs_access_point.workspaces.arn
+}
+
+output "strands_access_point_id" {
+  description = "EFS access point ID for /workspaces/strands (Fase 3)"
+  value       = aws_efs_access_point.strands.id
+}
+
+output "a2a_access_point_id" {
+  description = "EFS access point ID for /workspaces/a2a (Fase 3)"
+  value       = aws_efs_access_point.a2a.id
+}
+
+output "shared_access_point_id" {
+  description = "EFS access point ID for /workspaces/shared (Fase 3)"
+  value       = aws_efs_access_point.shared.id
 }
 
 output "mount_target_ids" {

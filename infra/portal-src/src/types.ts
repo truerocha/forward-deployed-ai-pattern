@@ -35,6 +35,9 @@ export interface LogEntry {
   agentName: string;
   message: string;
   type: 'info' | 'thought' | 'action' | 'error' | 'working' | 'complete' | 'system';
+  phase?: string;
+  gateName?: string;
+  gateResult?: string;
   _sortKey?: string;
 }
 
