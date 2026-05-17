@@ -21,7 +21,7 @@ set -euo pipefail
 
 PROFILE_ARG=""
 if [[ "${1:-}" == "--profile" && -n "${2:-}" ]]; then
-    PROFILE_ARG="--profile $2"
+    export AWS_PROFILE="$2"
 fi
 
 REGION="${AWS_REGION:-us-east-1}"
@@ -33,11 +33,11 @@ echo ""
 
 # 1. Get current task definition ARN from EventBridge target
 echo "① Checking EventBridge target task definition..."
-TARGET_TASK_DEF=$(aws $PROFILE_ARG events list-targets-by-rule \
+TARGET_TASK_DEF=$(aws events list-targets-by-rule \
     --rule fde-dev-dispatch-distributed \
     --event-bus-name fde-dev-factory-bus \
     --region "$REGION" \
-    --query 'Targets[0].EcsParameters.TaskDefinitionArn' \
+    --query 'Targets[?Id==`dispatch-orchestrator`].EcsParameters.TaskDefinitionArn | [0]' \
     --output text 2>/dev/null)
 
 if [[ -z "$TARGET_TASK_DEF" || "$TARGET_TASK_DEF" == "None" ]]; then
@@ -49,7 +49,7 @@ echo "   Target: $TARGET_TASK_DEF"
 # 2. Get IAM policy allowed resources
 echo ""
 echo "② Checking IAM role permissions..."
-IAM_RESOURCES=$(aws $PROFILE_ARG iam get-role-policy \
+IAM_RESOURCES=$(aws iam get-role-policy \
     --role-name fde-dev-eventbridge-ecs \
     --policy-name fde-dev-eventbridge-run-task \
     --region "$REGION" \
@@ -74,19 +74,19 @@ fi
 # 4. Validate EventBridge role has PassRole for task roles
 echo ""
 echo "④ Checking PassRole permissions..."
-TASK_ROLE=$(aws $PROFILE_ARG ecs describe-task-definition \
+TASK_ROLE=$(aws ecs describe-task-definition \
     --task-definition "$TARGET_TASK_DEF" \
     --region "$REGION" \
     --query 'taskDefinition.taskRoleArn' \
     --output text 2>/dev/null)
 
-EXEC_ROLE=$(aws $PROFILE_ARG ecs describe-task-definition \
+EXEC_ROLE=$(aws ecs describe-task-definition \
     --task-definition "$TARGET_TASK_DEF" \
     --region "$REGION" \
     --query 'taskDefinition.executionRoleArn' \
     --output text 2>/dev/null)
 
-PASS_ROLE_RESOURCES=$(aws $PROFILE_ARG iam get-role-policy \
+PASS_ROLE_RESOURCES=$(aws iam get-role-policy \
     --role-name fde-dev-eventbridge-ecs \
     --policy-name fde-dev-eventbridge-run-task \
     --region "$REGION" \
@@ -110,8 +110,8 @@ fi
 # 5. Check DLQ depth (operational health)
 echo ""
 echo "⑤ Checking DLQ depth..."
-DLQ_DEPTH=$(aws $PROFILE_ARG sqs get-queue-attributes \
-    --queue-url "https://sqs.$REGION.amazonaws.com/$(aws $PROFILE_ARG sts get-caller-identity --query Account --output text)/fde-dev-dispatch-dlq" \
+DLQ_DEPTH=$(aws sqs get-queue-attributes \
+    --queue-url "https://sqs.$REGION.amazonaws.com/$(aws sts get-caller-identity --query Account --output text)/fde-dev-dispatch-dlq" \
     --attribute-names ApproximateNumberOfMessages \
     --region "$REGION" \
     --query 'Attributes.ApproximateNumberOfMessages' \
