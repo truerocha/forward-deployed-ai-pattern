@@ -312,7 +312,9 @@ export const ReasoningView: React.FC<ReasoningViewProps> = ({ logs, currentStage
         }
       >
         {logs.length > 0 || currentStage ? (
-          <Steps steps={steps} />
+          <div className="pipeline-steps-responsive">
+            <Steps steps={steps} />
+          </div>
         ) : (
           <Box textAlign="center" padding="l" color="inherit">
             <StatusIndicator type="pending">

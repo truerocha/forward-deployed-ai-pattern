@@ -52,3 +52,37 @@ html, body {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-text-body-secondary, #8d99a8);
 }
+
+/* ─── Responsive Steps: Horizontal → Vertical on narrow viewports ─────────
+ * Cloudscape Steps component does not expose an orientation prop.
+ * This media query overrides the internal flex layout to stack vertically
+ * when the container is too narrow for 8 horizontal steps.
+ *
+ * Targets: .pipeline-steps-responsive wrapper → child list element
+ * Breakpoint: 768px (standard tablet/mobile threshold)
+ * Ref: https://cloudscape.design/components/steps/
+ */
+@media (max-width: 768px) {
+  .pipeline-steps-responsive [class*="list"] {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+  }
+
+  .pipeline-steps-responsive [class*="container"] {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 8px;
+  }
+
+  .pipeline-steps-responsive [class*="connector"] {
+    width: 2px !important;
+    height: 24px !important;
+    min-width: unset !important;
+    margin: 0 0 0 11px !important;
+  }
+
+  .pipeline-steps-responsive [class*="horizontal-header"] {
+    min-width: unset !important;
+    width: 100% !important;
+  }
+}
