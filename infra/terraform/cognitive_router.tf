@@ -42,13 +42,20 @@
 resource "aws_cloudwatch_event_rule" "dispatch_distributed" {
   name           = "${local.name_prefix}-dispatch-distributed"
   event_bus_name = aws_cloudwatch_event_bus.factory.name
-  description    = "Routes all dispatched tasks to strands-agent ECS (handles both distributed and monolith-downgraded)"
+  description    = "Routes dispatched tasks to strands-agent ECS via TASK_ID (distributed + reaper redispatch)"
 
+  # Only match "distributed" — monolith tasks are handled by the always-on
+  # ALM rule (Target 2 in eventbridge.tf). Matching "monolith" here caused
+  # fan-out: 2 containers for the same task (ALM rule + dispatch rule).
+  #
+  # The reaper emits with target_mode="distributed" for re-dispatch to ensure
+  # this rule fires and starts a container with TASK_ID.
+  # Ref: TASK-f49dbb7c — fan-out caused duplicate containers and race conditions.
   event_pattern = jsonencode({
     source      = ["fde.internal"]
     detail-type = ["task.dispatched"]
     detail = {
-      target_mode = ["distributed", "monolith"]
+      target_mode = ["distributed"]
     }
   })
 

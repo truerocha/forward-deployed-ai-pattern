@@ -357,7 +357,11 @@ def _redispatch_eligible(table, eligible_tasks: list) -> list:
 
             raw_detail = {
                 "task_id": task_id,
-                "target_mode": target_mode,
+                "target_mode": "distributed",  # Always use distributed for re-dispatch
+                # The dispatch rule only matches "distributed". For re-dispatch,
+                # we always want a container with TASK_ID (Direct Dispatch mode)
+                # regardless of the original routing decision.
+                # Ref: TASK-f49dbb7c — fan-out fix removed "monolith" from dispatch rule.
                 "depth": float(item.get("depth", 0)),
                 "repo": repo,
                 "issue_id": item.get("issue_id", ""),
