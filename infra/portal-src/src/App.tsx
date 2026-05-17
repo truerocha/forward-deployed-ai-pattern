@@ -247,7 +247,9 @@ export default function App() {
       case 'agents':
         return <AgentsView agents={agents} />;
       case 'reasoning':
-        return <ReasoningView logs={logs} currentStage={tasks.find((t: any) => t.status === 'IN_PROGRESS' || t.status === 'running')?.current_stage} />;
+        return <ReasoningView logs={logs} currentStage={
+          (tasks.find((t: any) => t.status === 'IN_PROGRESS' || t.status === 'running') || tasks[0])?.current_stage
+        } />;
       case 'gates':
         return <GatesView tasks={tasks} />;
       case 'health':
