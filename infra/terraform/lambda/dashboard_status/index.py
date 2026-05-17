@@ -179,8 +179,7 @@ def _handle_history(event, context):
             scan_kwargs = {
                 "FilterExpression": (
                     Attr("created_at").gte(cutoff)
-                    & Attr("task_id").not_contains("CONFIG#")
-                    & Attr("task_id").not_contains("COUNTER#")
+                    & Attr("task_id").begins_with("TASK-")
                 ),
                 "Limit": page_size * 10,  # Over-fetch to compensate for filter
             }
@@ -288,6 +287,8 @@ def _handle_history(event, context):
         return _response(200, body)
 
     except Exception as e:
+        import traceback
+        print(f"[ERROR] _handle_history failed: {str(e)[:200]}\n{traceback.format_exc()}")
         return _response(500, {"error": "Internal server error"})
 
 
