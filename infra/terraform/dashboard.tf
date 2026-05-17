@@ -153,6 +153,12 @@ resource "aws_apigatewayv2_route" "dashboard_reasoning" {
   target    = "integrations/${aws_apigatewayv2_integration.dashboard_status.id}"
 }
 
+resource "aws_apigatewayv2_route" "dashboard_history" {
+  api_id    = aws_apigatewayv2_api.webhook.id
+  route_key = "GET /status/history"
+  target    = "integrations/${aws_apigatewayv2_integration.dashboard_status.id}"
+}
+
 resource "aws_apigatewayv2_route" "dashboard_capacity" {
   api_id    = aws_apigatewayv2_api.webhook.id
   route_key = "GET /status/capacity"
