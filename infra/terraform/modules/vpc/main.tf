@@ -77,13 +77,50 @@ resource "aws_route_table_association" "private" {
 resource "aws_security_group" "ecs" {
   name_prefix = "${var.name_prefix}-ecs-"
   vpc_id      = aws_vpc.main.id
+
+  # ─── Egress: Least Privilege (SEC 5 — Network Protection) ─────────
+  # Each rule explicitly allows only the protocols and ports needed.
+  # Well-Architected: SEC 5 — "Control traffic at all layers"
+  #
+  # In awsvpc mode, containers in the same ECS task share 127.0.0.1.
+  # OTEL sidecar (4317/4318) uses localhost — no SG rule needed.
+
+  # HTTPS (443): Bedrock, GitHub, GitLab, Asana, PyPI, ECR, S3, Secrets Manager
   egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
-    description = "Allow all outbound (Bedrock, GitHub, GitLab, Asana APIs)"
+    description = "HTTPS: Bedrock, GitHub, GitLab, Asana, PyPI, ECR, S3, SecretsManager"
   }
+
+  # NFS (2049): EFS mount for shared workspaces (within VPC only)
+  egress {
+    from_port   = 2049
+    to_port     = 2049
+    protocol    = "tcp"
+    cidr_blocks = [var.vpc_cidr]
+    description = "NFS: EFS agent workspaces (VPC-internal)"
+  }
+
+  # DNS (53): Required for all outbound resolution (VPC DNS)
+  egress {
+    from_port   = 53
+    to_port     = 53
+    protocol    = "udp"
+    cidr_blocks = [var.vpc_cidr]
+    description = "DNS: VPC resolver"
+  }
+
+  # HTTP (80): Package managers that redirect from HTTP to HTTPS
+  egress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "HTTP: Package manager redirects (pip, npm)"
+  }
+
   tags = { Name = "${var.name_prefix}-ecs-sg" }
 }
 

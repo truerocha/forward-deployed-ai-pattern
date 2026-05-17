@@ -147,6 +147,17 @@ resource "aws_cloudwatch_event_target" "dispatch_distributed_ecs" {
   }
 }
 
+# ─── OPS 6: Log ALL dispatch_distributed events to CloudWatch ────
+# Provides visibility into every dispatch attempt — success or failure.
+# The ECS target above may fail silently (IAM, capacity, etc.) but
+# this log target always succeeds, giving operators a complete audit trail.
+resource "aws_cloudwatch_event_target" "dispatch_distributed_log" {
+  rule           = aws_cloudwatch_event_rule.dispatch_distributed.name
+  event_bus_name = aws_cloudwatch_event_bus.factory.name
+  target_id      = "dispatch-distributed-log"
+  arn            = aws_cloudwatch_log_group.cognitive_router.arn
+}
+
 # ─── Rule: Dispatch to Monolith (Informational) ─────────────────
 # Fires when Lambda decides depth < 0.5 → monolith execution.
 # The monolith is ALREADY running from the always-on Target 2 on the
@@ -266,4 +277,40 @@ resource "aws_cloudwatch_metric_alarm" "dispatch_dlq_depth" {
   }
 
   tags = { Component = "cognitive-router", Severity = "high" }
+}
+
+# ─── REL 11: DLQ Reprocessing via ecs-failure-handler ────────────
+# When RunTask fails at the EventBridge target level (IAM denied, capacity),
+# the event lands in the DLQ. This event source mapping triggers the
+# ecs-failure-handler Lambda to extract the task_id and re-dispatch.
+# The handler already has _attempt_redispatch logic — we just need to
+# route DLQ messages to it.
+
+resource "aws_lambda_event_source_mapping" "dispatch_dlq_reprocess" {
+  event_source_arn = aws_sqs_queue.dispatch_dlq.arn
+  function_name    = aws_lambda_function.ecs_failure_handler.arn
+  batch_size       = 1
+  enabled          = true
+
+  # Process one at a time to avoid thundering herd on retry
+  maximum_batching_window_in_seconds = 30
+}
+
+# Grant the failure handler permission to read from the DLQ
+resource "aws_iam_role_policy" "ecs_failure_handler_dlq" {
+  name = "${local.name_prefix}-failure-handler-dlq"
+  role = aws_iam_role.ecs_failure_handler.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "sqs:ReceiveMessage",
+        "sqs:DeleteMessage",
+        "sqs:GetQueueAttributes"
+      ]
+      Resource = aws_sqs_queue.dispatch_dlq.arn
+    }]
+  })
 }

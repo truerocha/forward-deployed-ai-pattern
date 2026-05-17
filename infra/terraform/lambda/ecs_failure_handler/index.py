@@ -47,6 +47,10 @@ def handler(event, context):
     """Route to appropriate handler based on event source."""
     source = event.get("source", "")
 
+    # SQS event (DLQ reprocessing) — REL 11
+    if "Records" in event:
+        return _handle_dlq_reprocess(event)
+
     if source == "aws.ecs":
         return _handle_ecs_state_change(event)
     elif source == "aws.events" or event.get("detail-type") == "Scheduled Event":
@@ -54,6 +58,54 @@ def handler(event, context):
     else:
         logger.info("Unknown event source: %s", source)
         return {"statusCode": 200, "body": "ignored"}
+
+
+def _handle_dlq_reprocess(event):
+    """Reprocess messages from the dispatch DLQ.
+
+    DLQ messages contain the InputTransformer output that was meant for ECS RunTask.
+    The body is the containerOverrides JSON with TASK_ID in the environment array.
+    We extract the task_id and re-dispatch via _attempt_redispatch.
+
+    Well-Architected: REL 11 — Design your workload to withstand component failures
+    """
+    records = event.get("Records", [])
+    reprocessed = 0
+
+    for record in records:
+        try:
+            body = json.loads(record.get("body", "{}"))
+            # Extract TASK_ID from containerOverrides
+            task_id = None
+            for container in body.get("containerOverrides", []):
+                for env in container.get("environment", []):
+                    if env.get("name") == "TASK_ID" and env.get("value", "").startswith("TASK-"):
+                        task_id = env["value"]
+                        break
+
+            if not task_id:
+                logger.warning("DLQ message has no TASK_ID — skipping: %s", str(body)[:200])
+                continue
+
+            logger.info("DLQ reprocessing: task_id=%s", task_id)
+
+            # Check if task is still in a retriable state
+            task_item = task_table.get_item(Key={"task_id": task_id}).get("Item", {})
+            status = task_item.get("status", "")
+
+            if status in ("COMPLETED", "FAILED", "DEAD_LETTER"):
+                logger.info("DLQ: task %s already in terminal state (%s) — skipping", task_id, status)
+                continue
+
+            # Re-dispatch using existing retry logic
+            _attempt_redispatch(task_id, "DLQ reprocessing: EventBridge target invocation failed")
+            reprocessed += 1
+
+        except Exception as e:
+            logger.error("DLQ reprocess error: %s", str(e)[:200])
+
+    logger.info("DLQ reprocessing complete: %d/%d records", reprocessed, len(records))
+    return {"statusCode": 200, "body": f"reprocessed {reprocessed}/{len(records)}"}
 
 
 def _handle_ecs_state_change(event):
@@ -272,18 +324,20 @@ def _extract_task_id_from_overrides(detail):
 def _update_task_with_failure(task_id, reason, stop_code):
     """Update a DynamoDB task with the ECS failure information."""
     safe_reason = reason[:200] if reason else "Unknown ECS failure"
+    # Use specific stage for dispatch failures vs runtime failures (OPS 8)
+    stage = "dispatch_failed" if stop_code == "TaskFailedToStart" else "execution_error"
     try:
         task_table.update_item(
             Key={"task_id": task_id},
             UpdateExpression="SET current_stage = :stage, updated_at = :now, ecs_error = :err",
             ExpressionAttributeValues={
-                ":stage": "failed",
+                ":stage": stage,
                 ":now": datetime.now(timezone.utc).isoformat(),
                 ":err": f"{stop_code}: {safe_reason}",
             },
         )
         _append_event(task_id, "error", f"❌ ECS startup failed: {safe_reason}")
-        logger.info("Updated task %s with ECS failure", task_id)
+        logger.info("Updated task %s with ECS failure (stage=%s)", task_id, stage)
     except Exception as e:
         logger.error("Failed to update task %s: %s", task_id, e)
 
