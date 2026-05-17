@@ -31,18 +31,18 @@ interface PipelineViewProps {
 
 function getTaskStatus(task: any): { type: 'success' | 'error' | 'warning' | 'in-progress' | 'stopped' | 'pending'; text: string } {
   if (task.pr_url) return { type: 'success', text: 'PR Delivered' };
-  if (task.status === 'running' || task.status === 'IN_PROGRESS') return { type: 'in-progress', text: task.stage_progress?.phase_label || task.current_stage || 'Running' };
+  if (task.status === 'running' || task.status === 'IN_PROGRESS') return { type: 'in-progress', text: 'Running' };
   if (task.status === 'completed' || task.status === 'COMPLETED') return { type: 'success', text: 'Completed' };
   if (task.status === 'completed_no_delivery') return { type: 'warning', text: 'Delivery Failed' };
   if (task.status === 'failed' || task.status === 'FAILED') return { type: 'error', text: 'Failed' };
-  if (task.status === 'REJECTED') return { type: 'error', text: `Rejected: ${task.error?.replace('schema_validation_failed: ', '') || 'invalid'}` };
+  if (task.status === 'REJECTED') return { type: 'error', text: 'Rejected' };
   if (task.status === 'DUPLICATE') return { type: 'stopped', text: `Duplicate → ${task.canonical_task_id?.slice(-8) || '?'}` };
   if (task.pr_error) return { type: 'warning', text: 'Push Failed' };
-  if (task.current_stage === 'warming') return { type: 'pending', text: 'Container Start' };
-  if (task.current_stage === 'claimed') return { type: 'in-progress', text: 'Task Intake' };
-  if (task.status === 'DISPATCHED' && !task.started_at) return { type: 'pending', text: 'Awaiting Container' };
-  if (task.status === 'DISPATCHED') return { type: 'in-progress', text: task.stage_progress?.phase_label || 'Dispatched' };
-  return { type: 'pending', text: task.stage_progress?.phase_label || task.current_stage || task.status || 'Pending' };
+  if (task.current_stage === 'warming') return { type: 'pending', text: 'Starting' };
+  if (task.current_stage === 'claimed') return { type: 'in-progress', text: 'Claimed' };
+  if (task.status === 'DISPATCHED' && !task.started_at) return { type: 'pending', text: 'Queued' };
+  if (task.status === 'DISPATCHED') return { type: 'in-progress', text: 'Dispatched' };
+  return { type: 'pending', text: task.status || 'Pending' };
 }
 
 const columnDefinitions: TableProps.ColumnDefinition<any>[] = [
