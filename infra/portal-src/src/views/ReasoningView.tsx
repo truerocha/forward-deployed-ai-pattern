@@ -319,7 +319,20 @@ export const ReasoningView: React.FC<ReasoningViewProps> = ({ logs, currentStage
         }
       >
         {logs.length > 0 || currentStage ? (
-          <Steps steps={steps} />
+          <SpaceBetween size="xs">
+            {steps.map((step, idx) => (
+              <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <StatusIndicator
+                  type={step.status === 'finished' ? 'success' : step.status === 'loading' ? 'in-progress' : step.status === 'error' ? 'error' : 'pending'}
+                >
+                  {step.title}
+                </StatusIndicator>
+                {step.status === 'loading' && (
+                  <Box fontSize="body-s" color="text-body-secondary">— {step.description}</Box>
+                )}
+              </div>
+            ))}
+          </SpaceBetween>
         ) : (
           <Box textAlign="center" padding="l" color="inherit">
             <StatusIndicator type="pending">
