@@ -597,7 +597,61 @@ class Orchestrator:
 
             logger.info("KG resolution: %s (catalog=%s)", _kg_resolution, catalog_path or "none")
 
-        # ── Step 7.7: ERP Check (Execution Readiness Pipeline, Wave 1) ──
+        # ── Step 7.7: Dependency Provisioning (ADR-038 Wave 4) ───────
+        # Before ERP or agent execution, provision runtime dependencies
+        # based on the task's tech_stack and the repo's manifest files.
+        # This ensures the container has all tools needed BEFORE pre-flight
+        # validates their presence.
+        #
+        # Sources of awareness:
+        #   1. data_contract.tech_stack (from issue template)
+        #   2. workspace_dir/requirements.txt, package.json, etc.
+        #   3. Execution step commands (if ERP task)
+        #
+        # Pattern: same as KG cascade — best-effort, non-blocking, observable.
+        if workspace.ready:
+            try:
+                from src.core.execution.dependency_awareness import build_provisioning_plan
+                from src.core.execution.dependency_resolver import resolve_dependencies
+
+                _dep_tech_stack = data_contract.get("tech_stack", [])
+                _dep_plan = build_provisioning_plan(
+                    tech_stack=_dep_tech_stack,
+                    workspace_dir=workspace.repo_path,
+                )
+
+                if _dep_plan.has_actions():
+                    task_queue.append_task_event(
+                        task_id, "system",
+                        f"🔧 Dependency provisioning: {_dep_plan.summary()}",
+                        phase="provisioning",
+                    )
+
+                    _dep_result = resolve_dependencies(
+                        plan=_dep_plan,
+                        event_callback=task_queue.append_task_event,
+                        task_id=task_id,
+                    )
+
+                    logger.info(
+                        "Dependency provisioning: %s",
+                        _dep_result.summary(),
+                    )
+                else:
+                    logger.info("Dependency provisioning: no actions needed (tech_stack=%s)", _dep_tech_stack)
+
+            except Exception as _dep_err:
+                # Non-blocking: provisioning failure should not kill the pipeline.
+                # The pre-flight will catch missing tools and report clearly.
+                logger.warning("Dependency provisioning failed (non-blocking): %s", str(_dep_err)[:200])
+                task_queue.append_task_event(
+                    task_id, "gate",
+                    f"⚠️ Dependency provisioning error (non-blocking): {str(_dep_err)[:150]}",
+                    phase="provisioning",
+                    gate_name="dependency_provisioning", gate_result="warn",
+                )
+
+        # ── Step 7.8: ERP Check (Execution Readiness Pipeline, Wave 1) ──
         # If the task was classified as "execution" by the webhook_ingest Lambda,
         # use the step-by-step executor instead of the standard agent pipeline.
         # This handles multi-step tasks with scripts, gates, and sequential deps.

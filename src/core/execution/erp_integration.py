@@ -128,6 +128,32 @@ def execute_with_erp(
             "ERP pre-flight FAILED for task %s: %s",
             task_id, preflight_result.blocking_errors,
         )
+
+        # ── Squad Fallback (ADR-038 Wave 4): Script-only failures ────────
+        # If ALL blocking errors are missing scripts (not missing binaries),
+        # the task needs agents to WRITE the scripts, not EXECUTE them.
+        # Return None → orchestrator falls through to standard squad pipeline.
+        if preflight_result.script_only_failures:
+            logger.info(
+                "ERP pre-flight: all failures are missing scripts — "
+                "reclassifying to squad pipeline (agents will write the scripts)",
+            )
+            if event_callback:
+                missing_scripts = [
+                    e.split(":")[1].strip().split(" ")[0]
+                    for e in preflight_result.blocking_errors
+                    if e.startswith("script:")
+                ]
+                event_callback(
+                    task_id, "system",
+                    f"🔄 ERP → Squad reclassification: {len(missing_scripts)} script(s) need to be written first. "
+                    f"Missing: {', '.join(missing_scripts[:5])}",
+                    phase="execution",
+                    gate_name="preflight_fallback",
+                    gate_result="reclassify",
+                )
+            return None  # Signal: orchestrator continues with standard squad pipeline
+
         if event_callback:
             event_callback(
                 task_id, "error",

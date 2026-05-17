@@ -52,6 +52,9 @@ class PreflightResult:
     checks: list[PreflightCheck] = field(default_factory=list)
     blocking_errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    resolution_attempted: bool = False  # True if Step 7.7 provisioning ran before this check
+    script_only_failures: bool = False  # True if ALL blocking errors are script:* (squad candidate)
+    resolution_attempted: bool = False  # True if DependencyResolver ran before this check
 
     def add_check(self, check: PreflightCheck) -> None:
         self.checks.append(check)
@@ -118,6 +121,14 @@ def run_preflight(
         "Pre-flight complete: passed=%s, checks=%d, errors=%d, warnings=%d",
         result.passed, len(result.checks), len(result.blocking_errors), len(result.warnings),
     )
+
+    # Compute script_only_failures: if ALL blocking errors are script:* checks,
+    # the task is a candidate for squad reclassification (agents write the scripts
+    # instead of executing pre-existing ones).
+    if not result.passed and result.blocking_errors:
+        result.script_only_failures = all(
+            err.startswith("script:") for err in result.blocking_errors
+        )
 
     return result
 

@@ -15,3 +15,20 @@ opentelemetry-sdk>=1.25.0
 opentelemetry-exporter-otlp-proto-http>=1.25.0
 opentelemetry-instrumentation-botocore>=0.46b0
 opentelemetry-instrumentation-httpx>=0.46b0
+
+# ─── Baseline Dev Tools (ADR-038 Wave 4: Defense in Depth) ──────────
+# These are always available in the container regardless of Step 7.7
+# runtime provisioning. Ensures pre-flight passes for common Python tasks
+# even if dependency_resolver fails silently (H2 scenario).
+pytest>=8.0.0
+pytest-cov>=5.0.0
+pip-tools>=7.4.0
+ruff>=0.4.0
+
+# ── Dev tooling baseline (ADR-038 Wave 4: Dependency Provisioning) ──
+# These are always available in the container for execution tasks.
+# Additional tools are provisioned at runtime by dependency_resolver.py.
+pytest>=8.0.0
+pytest-cov>=5.0.0
+pip-tools>=7.4.0
+ruff>=0.4.0
