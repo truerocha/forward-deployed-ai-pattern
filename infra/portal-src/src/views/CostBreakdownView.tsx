@@ -123,59 +123,63 @@ export const CostBreakdownView: React.FC<CostBreakdownViewProps> = ({ factoryDat
           </Container>
         </Grid>
 
-        {/* Tier breakdown */}
-        <Container
-          header={
-            <Header variant="h3" description="Cost distribution across LLM model tiers">
-              Cost by Model Tier
-            </Header>
-          }
-          footer={
-            <Box fontSize="body-s" color="text-body-secondary">
-              {summary.cost_by_tier.length} tier(s) active
-            </Box>
-          }
-        >
-          <SpaceBetween size="s">
-            {summary.cost_by_tier.map((tier) => (
-              <div key={tier.tier}>
-                <ProgressBar
-                  value={tier.percentage}
-                  label={tier.tier}
-                  additionalInfo={`$${tier.cost_usd.toFixed(4)} (${tier.percentage.toFixed(1)}%)`}
-                  variant="standalone"
-                />
-              </div>
-            ))}
-          </SpaceBetween>
-        </Container>
+        {/* Tier + Agent breakdown — side by side on desktop */}
+        <Grid gridDefinition={[
+          { colspan: { l: 6, m: 6, default: 12 } },
+          { colspan: { l: 6, m: 6, default: 12 } },
+        ]}>
+          <Container
+            header={
+              <Header variant="h3" description="Cost distribution across LLM model tiers">
+                Cost by Model Tier
+              </Header>
+            }
+            footer={
+              <Box fontSize="body-s" color="text-body-secondary">
+                {summary.cost_by_tier.length} tier(s) active
+              </Box>
+            }
+          >
+            <SpaceBetween size="s">
+              {summary.cost_by_tier.map((tier) => (
+                <div key={tier.tier}>
+                  <ProgressBar
+                    value={tier.percentage}
+                    label={tier.tier}
+                    additionalInfo={`$${tier.cost_usd.toFixed(4)} (${tier.percentage.toFixed(1)}%)`}
+                    variant="standalone"
+                  />
+                </div>
+              ))}
+            </SpaceBetween>
+          </Container>
 
-        {/* Per-agent breakdown — full list */}
-        <Container
-          header={
-            <Header variant="h3" description="Cost attribution per squad agent">
-              Cost by Agent
-            </Header>
-          }
-          footer={
-            <Box fontSize="body-s" color="text-body-secondary">
-              {sortedAgents.length} agent(s) with cost data
-            </Box>
-          }
-        >
-          <SpaceBetween size="s">
-            {sortedAgents.map(([name, data]) => (
-              <div key={name}>
-                <ProgressBar
-                  value={(data.cost / maxAgentCost) * 100}
-                  label={name}
-                  additionalInfo={`$${data.cost.toFixed(4)} · ${data.invocations} invocations`}
-                  variant="standalone"
-                />
-              </div>
-            ))}
-          </SpaceBetween>
-        </Container>
+          <Container
+            header={
+              <Header variant="h3" description="Cost attribution per squad agent">
+                Cost by Agent
+              </Header>
+            }
+            footer={
+              <Box fontSize="body-s" color="text-body-secondary">
+                {sortedAgents.length} agent(s) with cost data
+              </Box>
+            }
+          >
+            <SpaceBetween size="s">
+              {sortedAgents.map(([name, data]) => (
+                <div key={name}>
+                  <ProgressBar
+                    value={(data.cost / maxAgentCost) * 100}
+                    label={name}
+                    additionalInfo={`$${data.cost.toFixed(4)} · ${data.invocations} invocations`}
+                    variant="standalone"
+                  />
+                </div>
+              ))}
+            </SpaceBetween>
+          </Container>
+        </Grid>
 
         {/* Cost alerts */}
         <Container

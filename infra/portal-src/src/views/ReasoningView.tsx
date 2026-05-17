@@ -21,6 +21,7 @@ import Box from '@cloudscape-design/components/box';
 import Badge from '@cloudscape-design/components/badge';
 import Container from '@cloudscape-design/components/container';
 import ExpandableSection from '@cloudscape-design/components/expandable-section';
+import TreeView, { TreeViewProps } from '@cloudscape-design/components/tree-view';
 
 import { LogEntry } from '../types';
 import { useTranslation } from 'react-i18next';
@@ -154,6 +155,59 @@ const columnDefinitions: TableProps.ColumnDefinition<LogEntry>[] = [
   },
 ];
 
+function buildTreeItems(logs: LogEntry[]): TreeViewProps.Item[] {
+  // Group logs by detected phase
+  const phases: Record<string, LogEntry[]> = {
+    'Intake': [],
+    'Workspace': [],
+    'Reconnaissance': [],
+    'Engineering': [],
+    'Review': [],
+    'Completion': [],
+    'Other': [],
+  };
+
+  for (const log of logs) {
+    const msg = log.message.toLowerCase();
+    if (msg.includes('workspace') || msg.includes('clone') || msg.includes('branch')) {
+      phases['Workspace'].push(log);
+    } else if (msg.includes('reconnaissance') || msg.includes('constraint') || msg.includes('scope') || msg.includes('intake')) {
+      phases['Reconnaissance'].push(log);
+    } else if (msg.includes('engineering') || msg.includes('step_') || msg.includes('erp') || msg.includes('executing') || msg.includes('code')) {
+      phases['Engineering'].push(log);
+    } else if (msg.includes('push') || msg.includes('pr ') || msg.includes('pull request') || msg.includes('review')) {
+      phases['Review'].push(log);
+    } else if (msg.includes('complete') || msg.includes('finished') || msg.includes('metrics')) {
+      phases['Completion'].push(log);
+    } else if (msg.includes('starting') || msg.includes('dispatch') || msg.includes('ingest')) {
+      phases['Intake'].push(log);
+    } else {
+      phases['Other'].push(log);
+    }
+  }
+
+  // Build tree items — only include phases that have events
+  const treeItems: TreeViewProps.Item[] = [];
+
+  for (const [phase, events] of Object.entries(phases)) {
+    if (events.length === 0) continue;
+
+    const hasError = events.some(e => e.type === 'error');
+    const phaseIcon = hasError ? '❌' : '✅';
+
+    treeItems.push({
+      id: phase,
+      text: `${phaseIcon} ${phase} (${events.length})`,
+      items: events.slice(0, 20).map((event, idx) => ({
+        id: `${phase}-${idx}`,
+        text: `${event.timestamp} [${event.agentName}] ${event.message}`,
+      })),
+    });
+  }
+
+  return treeItems;
+}
+
 export const ReasoningView: React.FC<ReasoningViewProps> = ({ logs }) => {
   const { t } = useTranslation();
 
@@ -183,30 +237,27 @@ export const ReasoningView: React.FC<ReasoningViewProps> = ({ logs }) => {
         )}
       </Container>
 
-      {/* Detailed reasoning events — expandable table */}
+      {/* Reasoning Tree — events grouped by pipeline phase */}
       <ExpandableSection
         variant="container"
-        headerText={`Reasoning Events (${logs.length})`}
-        headerDescription="Detailed chain-of-thought from agent execution"
-        defaultExpanded={logs.length > 0 && logs.length <= 20}
+        headerText={`Reasoning Tree (${logs.length} events)`}
+        headerDescription="Events grouped by pipeline phase — expand to see details"
+        defaultExpanded={logs.length > 0 && logs.length <= 30}
       >
-        <Table
-          columnDefinitions={columnDefinitions}
-          items={logs.slice(0, 100)}
-          variant="embedded"
-          empty={
-            <Box margin={{ vertical: 'xs' }} textAlign="center" color="inherit">
-              <SpaceBetween size="m">
-                <b>{t('terminal.awaiting')}</b>
-                <Box variant="p" color="inherit">
-                  Reasoning events will appear here when tasks are executing.
-                </Box>
-              </SpaceBetween>
-            </Box>
-          }
-          stripedRows
-          enableKeyboardNavigation
-        />
+        {logs.length > 0 ? (
+          <TreeView
+            items={buildTreeItems(logs)}
+          />
+        ) : (
+          <Box margin={{ vertical: 'xs' }} textAlign="center" color="inherit">
+            <SpaceBetween size="m">
+              <b>{t('terminal.awaiting')}</b>
+              <Box variant="p" color="inherit">
+                Reasoning events will appear here when tasks are executing.
+              </Box>
+            </SpaceBetween>
+          </Box>
+        )}
       </ExpandableSection>
     </SpaceBetween>
   );

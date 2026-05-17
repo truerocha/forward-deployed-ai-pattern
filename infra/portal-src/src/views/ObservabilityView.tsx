@@ -129,7 +129,7 @@ export const ObservabilityView: React.FC<ObservabilityViewProps> = ({
 
     return (
       <Grid
-        gridDefinition={cardsWithData.map(() => ({ colspan: { l: 6, m: 6, default: 12 } }))}
+        gridDefinition={cardsWithData.map(() => ({ colspan: { l: 4, m: 6, default: 12 } }))}
       >
         {cardsWithData.map((cardName) => {
           const card = cardRegistry[cardName];
